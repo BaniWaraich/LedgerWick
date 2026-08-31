@@ -1,0 +1,303 @@
+<!DOCTYPE html><html class="light" lang="en"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Ledgerwick - Home</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="assets/css2-8180b2d19a5d95074b0e3a061b674483" rel="stylesheet">
+<link href="assets/css2-a39f5c6fcbb87b419667ec984d2e579a" rel="stylesheet">
+<link href="assets/css2-a39f5c6fcbb87b419667ec984d2e579a" rel="stylesheet">
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-secondary": "#ffffff",
+                        "on-primary-fixed": "#0d1a38",
+                        "secondary-container": "#dce2f3",
+                        "secondary": "#585f6c",
+                        "inverse-on-surface": "#f0f1f2",
+                        "surface-container-lowest": "#ffffff",
+                        "error": "#ba1a1a",
+                        "tertiary-container": "#00442d",
+                        "primary-container": "#2e3a59",
+                        "on-tertiary-fixed-variant": "#005236",
+                        "surface-tint": "#525e7f",
+                        "tertiary-fixed-dim": "#4edea3",
+                        "surface-container-low": "#f3f4f5",
+                        "surface-variant": "#e1e3e4",
+                        "primary-fixed-dim": "#bac6ec",
+                        "on-secondary-container": "#5e6572",
+                        "surface-container": "#edeeef",
+                        "secondary-fixed-dim": "#c0c7d6",
+                        "primary-fixed": "#dae2ff",
+                        "on-secondary-fixed": "#151c27",
+                        "background": "#f8f9fa",
+                        "surface-container-highest": "#e1e3e4",
+                        "on-surface": "#191c1d",
+                        "secondary-fixed": "#dce2f3",
+                        "on-tertiary-container": "#17bb83",
+                        "surface": "#f8f9fa",
+                        "surface-bright": "#f8f9fa",
+                        "on-primary-fixed-variant": "#3a4666",
+                        "on-primary": "#ffffff",
+                        "tertiary-fixed": "#6ffbbe",
+                        "primary": "#182442",
+                        "surface-dim": "#d9dadb",
+                        "tertiary": "#002c1b",
+                        "on-background": "#191c1d",
+                        "outline": "#75777e",
+                        "on-error": "#ffffff",
+                        "inverse-primary": "#bac6ec",
+                        "on-error-container": "#93000a",
+                        "on-secondary-fixed-variant": "#404754",
+                        "outline-variant": "#c6c6ce",
+                        "on-tertiary": "#ffffff",
+                        "on-tertiary-fixed": "#002113",
+                        "surface-container-high": "#e7e8e9",
+                        "error-container": "#ffdad6",
+                        "on-surface-variant": "#45464e",
+                        "on-primary-container": "#98a4c9",
+                        "inverse-surface": "#2e3132"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "stack-lg": "32px",
+                        "margin-desktop": "40px",
+                        "gutter": "24px",
+                        "container-max": "1280px",
+                        "stack-md": "16px",
+                        "margin-mobile": "16px",
+                        "unit": "4px",
+                        "stack-sm": "8px"
+                    },
+                    "fontFamily": {
+                        "headline-lg-mobile": ["\"Source Serif 4\""],
+                        "headline-md": ["\"Source Serif 4\""],
+                        "label-sm": ["Hanken Grotesk"],
+                        "label-md": ["Hanken Grotesk"],
+                        "display-lg": ["\"Source Serif 4\""],
+                        "body-lg": ["Hanken Grotesk"],
+                        "body-sm": ["Hanken Grotesk"],
+                        "headline-lg": ["\"Source Serif 4\""],
+                        "body-md": ["Hanken Grotesk"]
+                    },
+                    "fontSize": {
+                        "headline-lg-mobile": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "fontWeight": "500" }],
+                        "label-sm": ["12px", { "lineHeight": "16px", "letterSpacing": "0.03em", "fontWeight": "600" }],
+                        "label-md": ["14px", { "lineHeight": "20px", "letterSpacing": "0.01em", "fontWeight": "600" }],
+                        "display-lg": ["48px", { "lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "body-lg": ["18px", { "lineHeight": "28px", "fontWeight": "400" }],
+                        "body-sm": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "headline-lg": ["32px", { "lineHeight": "40px", "fontWeight": "600" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { background-color: #F8F9FA; color: #191c1d; }
+    </style>
+</head>
+<body class="flex min-h-screen font-body-md text-body-md bg-background text-on-background antialiased selection:bg-primary-fixed selection:text-on-primary-fixed">
+<!-- Top Navigation for Mobile (md:hidden) -->
+<nav class="md:hidden fixed top-0 left-0 w-full z-50 flex justify-between items-center px-margin-mobile h-16 bg-surface border-b border-outline-variant">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary" data-icon="account_balance">account_balance</span>
+<span class="font-headline-md text-headline-md font-bold text-primary">Ledgerwick</span>
+</div>
+<div class="flex gap-4 items-center">
+<button class="text-secondary hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<button class="text-secondary hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="menu">menu</span>
+</button>
+</div>
+</nav>
+<!-- Side Navigation (hidden md:flex) -->
+<aside class="hidden md:flex fixed left-0 top-0 h-full w-64 flex-col py-stack-lg border-r border-outline-variant bg-surface-container-low z-40">
+<div class="px-margin-desktop mb-stack-lg flex flex-col gap-2">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded bg-primary flex items-center justify-center">
+<span class="material-symbols-outlined text-on-primary" data-icon="account_balance">account_balance</span>
+</div>
+<div>
+<h1 class="font-headline-md text-headline-md font-semibold text-primary tracking-tight">Ledgerwick</h1>
+<p class="font-label-sm text-label-sm text-secondary uppercase tracking-widest">Financial Ops</p>
+</div>
+</div>
+</div>
+<nav class="flex-1 px-4 flex flex-col gap-1">
+<a class="flex items-center gap-3 px-4 py-2 bg-secondary-container text-on-secondary-container rounded-lg font-bold scale-95 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="home" data-weight="fill" style="font-variation-settings: 'FILL' 1;">home</span>
+<span class="font-label-md text-label-md">Home</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 text-secondary hover:bg-surface-container-high transition-all rounded-lg" href="#">
+<span class="material-symbols-outlined" data-icon="account_tree">account_tree</span>
+<span class="font-label-md text-label-md">Connections</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 text-secondary hover:bg-surface-container-high transition-all rounded-lg" href="#">
+<span class="material-symbols-outlined" data-icon="upload_file">upload_file</span>
+<span class="font-label-md text-label-md">Statements</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 text-secondary hover:bg-surface-container-high transition-all rounded-lg" href="#">
+<span class="material-symbols-outlined" data-icon="Rule">subdirectory_arrow_right</span>
+<span class="font-label-md text-label-md">Matching</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 text-secondary hover:bg-surface-container-high transition-all rounded-lg" href="#">
+<span class="material-symbols-outlined" data-icon="ios_share">ios_share</span>
+<span class="font-label-md text-label-md">Exports</span>
+</a>
+</nav>
+<div class="px-4 mt-auto flex flex-col gap-1">
+<button class="w-full flex justify-center items-center gap-2 px-4 py-2 mb-4 border border-outline text-secondary font-label-md text-label-md rounded hover:border-primary hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[18px]" data-icon="star">star</span>
+                Upgrade Plan
+            </button>
+<a class="flex items-center gap-3 px-4 py-2 text-secondary hover:bg-surface-container-high transition-all rounded-lg" href="#">
+<span class="material-symbols-outlined" data-icon="help">help</span>
+<span class="font-label-md text-label-md">Support</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 text-secondary hover:bg-surface-container-high transition-all rounded-lg" href="#">
+<span class="material-symbols-outlined" data-icon="logout">logout</span>
+<span class="font-label-md text-label-md">Sign Out</span>
+</a>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="flex-1 md:ml-64 pt-16 md:pt-0 p-margin-mobile md:p-margin-desktop max-w-container-max mx-auto w-full flex flex-col gap-stack-lg">
+<!-- Header Section -->
+<header class="flex flex-col gap-2 border-b border-outline-variant pb-stack-md pt-stack-md md:pt-0">
+<h2 class="font-headline-lg-mobile md:font-headline-lg text-headline-lg-mobile md:text-headline-lg text-on-surface">Welcome back, Ledgerwick.</h2>
+<p class="font-body-lg text-body-lg text-on-surface-variant">Your workspace is ready. Let's ensure your financial records are perfectly aligned.</p>
+</header>
+<!-- Primary Action & Workflow Preview -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-gutter">
+<!-- Primary Action Card (Bento Style) -->
+<div class="lg:col-span-5 bg-surface-container-lowest border border-outline-variant rounded-xl p-stack-lg flex flex-col justify-between hover:border-primary transition-colors group relative overflow-hidden">
+<div class="absolute -right-16 -top-16 w-64 h-64 bg-primary-fixed-dim/20 rounded-full blur-3xl group-hover:bg-primary-fixed/30 transition-all duration-500"></div>
+<div class="z-10 flex flex-col gap-4">
+<div class="w-12 h-12 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center mb-2">
+<span class="material-symbols-outlined text-[28px]" data-icon="add_task">add_task</span>
+</div>
+<div>
+<h3 class="font-headline-md text-headline-md text-on-surface mb-2">Start New Reconciliation</h3>
+<p class="font-body-md text-body-md text-on-surface-variant">Begin a new cycle to match your bank statements with your accounting ledger securely.</p>
+</div>
+</div>
+<div class="z-10 mt-stack-md">
+<button class="w-full bg-primary text-on-primary font-label-md text-label-md py-3 px-6 rounded hover:bg-primary-container hover:text-on-primary-container transition-colors flex items-center justify-center gap-2">
+                        Initialize Workflow
+                        <span class="material-symbols-outlined text-[18px]" data-icon="arrow_forward">arrow_forward</span>
+</button>
+</div>
+</div>
+<!-- Workflow Preview Box -->
+<div class="lg:col-span-7 bg-surface-container-lowest border border-outline-variant rounded-xl p-stack-lg flex flex-col gap-stack-md">
+<div class="flex justify-between items-center border-b border-outline-variant pb-4">
+<h3 class="font-headline-md text-headline-md text-on-surface">Reconciliation Process</h3>
+<span class="font-label-sm text-label-sm text-secondary bg-surface-container px-2 py-1 rounded">3 Steps</span>
+</div>
+<div class="flex-1 flex flex-col justify-center py-4">
+<div class="relative flex flex-col md:flex-row justify-between items-start md:items-center gap-8 md:gap-4">
+<!-- Connecting Line (Desktop) -->
+<div class="hidden md:block absolute top-1/2 left-8 right-8 h-[2px] bg-surface-variant -translate-y-1/2 z-0"></div>
+<!-- Step 1 -->
+<div class="relative z-10 flex flex-row md:flex-col items-center gap-4 bg-surface-container-lowest p-2">
+<div class="w-10 h-10 rounded-full bg-surface-container border-2 border-outline-variant flex items-center justify-center text-on-surface-variant font-label-md text-label-md">1</div>
+<div class="text-left md:text-center">
+<p class="font-label-md text-label-md text-on-surface">Connect Gmail</p>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1">Fetch invoices automatically</p>
+</div>
+</div>
+<!-- Step 2 -->
+<div class="relative z-10 flex flex-row md:flex-col items-center gap-4 bg-surface-container-lowest p-2">
+<div class="w-10 h-10 rounded-full bg-surface-container border-2 border-outline-variant flex items-center justify-center text-on-surface-variant font-label-md text-label-md">2</div>
+<div class="text-left md:text-center">
+<p class="font-label-md text-label-md text-on-surface">Upload Statement</p>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1">Import bank CSV or PDF</p>
+</div>
+</div>
+<!-- Step 3 -->
+<div class="relative z-10 flex flex-row md:flex-col items-center gap-4 bg-surface-container-lowest p-2">
+<div class="w-10 h-10 rounded-full bg-surface-container border-2 border-outline-variant flex items-center justify-center text-on-surface-variant font-label-md text-label-md">3</div>
+<div class="text-left md:text-center">
+<p class="font-label-md text-label-md text-on-surface">Review Matches</p>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-1">Confirm suggested pairings</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Recent Activity Table -->
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden flex flex-col">
+<div class="p-stack-md border-b border-outline-variant flex justify-between items-center bg-surface-bright">
+<h3 class="font-headline-md text-headline-md text-on-surface">Recent Reconciliations</h3>
+<button class="font-label-md text-label-md text-primary hover:text-primary-container transition-colors">View All History</button>
+</div>
+<div class="w-full overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-low border-b border-surface-variant">
+<th class="p-stack-sm font-label-sm text-label-sm text-secondary font-medium">Period / Reference</th>
+<th class="p-stack-sm font-label-sm text-label-sm text-secondary font-medium">Date Completed</th>
+<th class="p-stack-sm font-label-sm text-label-sm text-secondary font-medium">Items Matched</th>
+<th class="p-stack-sm font-label-sm text-label-sm text-secondary font-medium">Status</th>
+<th class="p-stack-sm font-label-sm text-label-sm text-secondary font-medium text-right">Action</th>
+</tr>
+</thead>
+<tbody class="font-body-sm text-body-sm text-secondary">
+<tr class="border-b border-surface-variant hover:bg-surface-container-lowest transition-colors">
+<td class="p-stack-sm font-label-md text-label-md text-on-surface">Oct 2023 Statement</td>
+<td class="p-stack-sm">Nov 2, 2023</td>
+<td class="p-stack-sm">142 / 142</td>
+<td class="p-stack-sm">
+<span class="inline-flex items-center gap-1 bg-[#E6F4EA] text-[#137333] px-2 py-1 rounded font-label-sm text-label-sm">
+<span class="w-2 h-2 rounded-full bg-[#137333]"></span> Completed
+                                </span>
+</td>
+<td class="p-stack-sm text-right">
+<button class="text-secondary hover:text-primary transition-colors p-1"><span class="material-symbols-outlined text-[18px]" data-icon="download">download</span></button>
+</td>
+</tr>
+<tr class="border-b border-surface-variant hover:bg-surface-container-lowest transition-colors">
+<td class="p-stack-sm font-label-md text-label-md text-on-surface">Sep 2023 Statement</td>
+<td class="p-stack-sm">Oct 4, 2023</td>
+<td class="p-stack-sm">118 / 118</td>
+<td class="p-stack-sm">
+<span class="inline-flex items-center gap-1 bg-[#E6F4EA] text-[#137333] px-2 py-1 rounded font-label-sm text-label-sm">
+<span class="w-2 h-2 rounded-full bg-[#137333]"></span> Completed
+                                </span>
+</td>
+<td class="p-stack-sm text-right">
+<button class="text-secondary hover:text-primary transition-colors p-1"><span class="material-symbols-outlined text-[18px]" data-icon="download">download</span></button>
+</td>
+</tr>
+<tr class="hover:bg-surface-container-lowest transition-colors">
+<td class="p-stack-sm font-label-md text-label-md text-on-surface">Q3 Tax Prep Partial</td>
+<td class="p-stack-sm">Sep 15, 2023</td>
+<td class="p-stack-sm text-on-surface-variant">45 / 50</td>
+<td class="p-stack-sm">
+<span class="inline-flex items-center gap-1 bg-surface-container text-secondary px-2 py-1 rounded font-label-sm text-label-sm">
+<span class="w-2 h-2 rounded-full bg-secondary"></span> Draft
+                                </span>
+</td>
+<td class="p-stack-sm text-right">
+<button class="text-primary hover:text-primary-container font-label-sm text-label-sm transition-colors p-1">Resume</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</main>
+</body></html>

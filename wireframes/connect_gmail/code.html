@@ -1,0 +1,200 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Ledgerwick - Connect Gmail</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="assets/css2-a39f5c6fcbb87b419667ec984d2e579a" rel="stylesheet">
+<link href="assets/css2-aec62a0b6c42a33abbfe8791fe7efd03" rel="stylesheet">
+<link href="assets/css2-a39f5c6fcbb87b419667ec984d2e579a" rel="stylesheet">
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-secondary": "#ffffff",
+                    "on-primary-fixed": "#0d1a38",
+                    "secondary-container": "#dce2f3",
+                    "secondary": "#585f6c",
+                    "inverse-on-surface": "#f0f1f2",
+                    "surface-container-lowest": "#ffffff",
+                    "error": "#ba1a1a",
+                    "tertiary-container": "#00442d",
+                    "primary-container": "#2e3a59",
+                    "on-tertiary-fixed-variant": "#005236",
+                    "surface-tint": "#525e7f",
+                    "tertiary-fixed-dim": "#4edea3",
+                    "surface-container-low": "#f3f4f5",
+                    "surface-variant": "#e1e3e4",
+                    "primary-fixed-dim": "#bac6ec",
+                    "on-secondary-container": "#5e6572",
+                    "surface-container": "#edeeef",
+                    "secondary-fixed-dim": "#c0c7d6",
+                    "primary-fixed": "#dae2ff",
+                    "on-secondary-fixed": "#151c27",
+                    "background": "#f8f9fa",
+                    "surface-container-highest": "#e1e3e4",
+                    "on-surface": "#191c1d",
+                    "secondary-fixed": "#dce2f3",
+                    "on-tertiary-container": "#17bb83",
+                    "surface": "#f8f9fa",
+                    "surface-bright": "#f8f9fa",
+                    "on-primary-fixed-variant": "#3a4666",
+                    "on-primary": "#ffffff",
+                    "tertiary-fixed": "#6ffbbe",
+                    "primary": "#182442",
+                    "surface-dim": "#d9dadb",
+                    "tertiary": "#002c1b",
+                    "on-background": "#191c1d",
+                    "outline": "#75777e",
+                    "on-error": "#ffffff",
+                    "inverse-primary": "#bac6ec",
+                    "on-error-container": "#93000a",
+                    "on-secondary-fixed-variant": "#404754",
+                    "outline-variant": "#c6c6ce",
+                    "on-tertiary": "#ffffff",
+                    "on-tertiary-fixed": "#002113",
+                    "surface-container-high": "#e7e8e9",
+                    "error-container": "#ffdad6",
+                    "on-surface-variant": "#45464e",
+                    "on-primary-container": "#98a4c9",
+                    "inverse-surface": "#2e3132"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "spacing": {
+                    "stack-lg": "32px",
+                    "margin-desktop": "40px",
+                    "gutter": "24px",
+                    "container-max": "1280px",
+                    "stack-md": "16px",
+                    "margin-mobile": "16px",
+                    "unit": "4px",
+                    "stack-sm": "8px"
+            },
+            "fontFamily": {
+                    "headline-lg-mobile": ["\"Source Serif 4\""],
+                    "headline-md": ["\"Source Serif 4\""],
+                    "label-sm": ["Hanken Grotesk"],
+                    "label-md": ["Hanken Grotesk"],
+                    "display-lg": ["\"Source Serif 4\""],
+                    "body-lg": ["Hanken Grotesk"],
+                    "body-sm": ["Hanken Grotesk"],
+                    "headline-lg": ["\"Source Serif 4\""],
+                    "body-md": ["Hanken Grotesk"]
+            },
+            "fontSize": {
+                    "headline-lg-mobile": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                    "headline-md": ["24px", {"lineHeight": "32px", "fontWeight": "500"}],
+                    "label-sm": ["12px", {"lineHeight": "16px", "letterSpacing": "0.03em", "fontWeight": "600"}],
+                    "label-md": ["14px", {"lineHeight": "20px", "letterSpacing": "0.01em", "fontWeight": "600"}],
+                    "display-lg": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "600"}],
+                    "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+                    "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                    "headline-lg": ["32px", {"lineHeight": "40px", "fontWeight": "600"}],
+                    "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}]
+            }
+          }
+        }
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .fill-icon {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body-md min-h-screen flex flex-col antialiased">
+<!-- Minimal Header for Linear Flow -->
+<header class="w-full px-margin-desktop py-stack-md bg-surface-container-lowest border-b border-outline-variant flex justify-center sticky top-0 z-50">
+<div class="font-headline-md text-headline-md font-semibold text-primary tracking-tight">Ledgerwick</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-grow flex flex-col items-center justify-center p-margin-desktop w-full max-w-container-max mx-auto">
+<div class="w-full max-w-[640px] flex flex-col items-center">
+<!-- Workflow Progress Indicator -->
+<div class="w-full flex items-center justify-between mb-stack-lg relative px-8">
+<!-- Line background -->
+<div class="absolute top-1/2 left-12 right-12 h-px bg-outline-variant -translate-y-1/2 z-0"></div>
+<!-- Step 1 (Active) -->
+<div class="relative z-10 flex flex-col items-center gap-unit bg-background px-2">
+<div class="w-8 h-8 rounded-full bg-primary text-on-primary flex items-center justify-center font-label-md text-label-md shadow-sm">1</div>
+<span class="font-label-sm text-label-sm text-primary">Gmail</span>
+</div>
+<!-- Step 2 (Pending) -->
+<div class="relative z-10 flex flex-col items-center gap-unit bg-background px-2 opacity-60">
+<div class="w-8 h-8 rounded-full border-2 border-outline text-outline bg-surface-container-lowest flex items-center justify-center font-label-md text-label-md">2</div>
+<span class="font-label-sm text-label-sm text-secondary">Mapping</span>
+</div>
+<!-- Step 3 (Pending) -->
+<div class="relative z-10 flex flex-col items-center gap-unit bg-background px-2 opacity-60">
+<div class="w-8 h-8 rounded-full border-2 border-outline text-outline bg-surface-container-lowest flex items-center justify-center font-label-md text-label-md">3</div>
+<span class="font-label-sm text-label-sm text-secondary">Review</span>
+</div>
+</div>
+<!-- Primary Connection Card (Not Connected State) -->
+<div class="bg-surface-container-lowest w-full rounded-xl border border-outline-variant p-stack-lg flex flex-col items-center text-center shadow-sm relative overflow-hidden">
+<!-- Decorative subtle top border highlight -->
+<div class="absolute top-0 left-0 w-full h-1 bg-primary"></div>
+<div class="w-16 h-16 rounded-full bg-secondary-container text-on-secondary-container flex items-center justify-center mb-stack-sm">
+<span class="material-symbols-outlined text-[32px] fill-icon">mail</span>
+</div>
+<h1 class="font-headline-lg text-headline-lg md:font-headline-lg md:text-headline-lg font-headline-lg-mobile text-headline-lg-mobile text-primary mb-stack-sm">
+                    Connect your Gmail account
+                </h1>
+<p class="font-body-lg text-body-lg text-on-surface-variant max-w-[480px] mb-stack-md">
+                    Ledgerwick uses secure access to search for invoices in your inbox. We only look for messages that match your transactions. Your data is encrypted and private.
+                </p>
+<!-- Trust Indicators -->
+<div class="flex items-center justify-center gap-gutter mb-stack-lg bg-surface-container-low py-3 px-6 rounded-lg border border-outline-variant/50">
+<div class="flex items-center gap-2 text-on-secondary-container">
+<span class="material-symbols-outlined text-[18px]">lock</span>
+<span class="font-label-sm text-label-sm">End-to-End Encrypted</span>
+</div>
+<div class="w-px h-4 bg-outline-variant"></div>
+<div class="flex items-center gap-2 text-on-secondary-container">
+<span class="material-symbols-outlined text-[18px]">policy</span>
+<span class="font-label-sm text-label-sm">Read-Only Access</span>
+</div>
+</div>
+<!-- Primary CTA -->
+<button class="w-full max-w-[320px] h-[48px] bg-primary text-on-primary hover:bg-on-primary-fixed-variant transition-colors duration-200 rounded-lg flex items-center justify-center gap-3 font-label-md text-label-md shadow-sm">
+<span class="material-symbols-outlined fill-icon">mail</span>
+                    Connect Gmail
+                </button>
+</div>
+<!-- Contextual Divider -->
+<div class="w-full flex items-center justify-center gap-4 my-stack-lg opacity-40">
+<div class="h-px bg-outline-variant flex-grow"></div>
+<span class="font-label-sm text-label-sm text-outline tracking-wider uppercase">Visual Preview</span>
+<div class="h-px bg-outline-variant flex-grow"></div>
+</div>
+<!-- "Connected" State Preview Card -->
+<div class="w-full bg-surface-container-low rounded-lg border border-outline-variant p-stack-md flex items-center justify-between opacity-80 hover:opacity-100 transition-opacity">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center border border-outline-variant/30">
+<span class="font-label-md text-label-md font-bold">JW</span>
+</div>
+<div class="flex flex-col">
+<span class="font-label-md text-label-md text-primary">john.wick@ledgerwick.com</span>
+<div class="flex items-center gap-1 mt-1">
+<span class="material-symbols-outlined text-[14px] text-tertiary-fixed-dim fill-icon">check_circle</span>
+<span class="font-body-sm text-body-sm text-tertiary">Connected &amp; Syncing</span>
+</div>
+</div>
+</div>
+<button class="px-4 py-2 bg-surface-container-lowest border border-outline-variant rounded text-secondary font-label-sm text-label-sm hover:bg-surface-variant transition-colors" disabled="">
+                    Manage
+                </button>
+</div>
+<p class="font-label-sm text-label-sm text-outline mt-2 text-center w-full">This is how your account will appear once successfully connected.</p>
+</div>
+</main>
+</body></html>

@@ -1,0 +1,326 @@
+<!DOCTYPE html><html class="h-full bg-background dark:bg-background" lang="en"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Ledgerwick - Parsed Transactions</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="assets/css2-a39f5c6fcbb87b419667ec984d2e579a" rel="stylesheet">
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="assets/css2-8845ea9eac47ace696f21a628a7e3d1b" rel="stylesheet">
+<link href="assets/css2-a39f5c6fcbb87b419667ec984d2e579a" rel="stylesheet">
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-secondary": "#ffffff",
+                      "on-primary-fixed": "#0d1a38",
+                      "secondary-container": "#dce2f3",
+                      "secondary": "#585f6c",
+                      "inverse-on-surface": "#f0f1f2",
+                      "surface-container-lowest": "#ffffff",
+                      "error": "#ba1a1a",
+                      "tertiary-container": "#00442d",
+                      "primary-container": "#2e3a59",
+                      "on-tertiary-fixed-variant": "#005236",
+                      "surface-tint": "#525e7f",
+                      "tertiary-fixed-dim": "#4edea3",
+                      "surface-container-low": "#f3f4f5",
+                      "surface-variant": "#e1e3e4",
+                      "primary-fixed-dim": "#bac6ec",
+                      "on-secondary-container": "#5e6572",
+                      "surface-container": "#edeeef",
+                      "secondary-fixed-dim": "#c0c7d6",
+                      "primary-fixed": "#dae2ff",
+                      "on-secondary-fixed": "#151c27",
+                      "background": "#f8f9fa",
+                      "surface-container-highest": "#e1e3e4",
+                      "on-surface": "#191c1d",
+                      "secondary-fixed": "#dce2f3",
+                      "on-tertiary-container": "#17bb83",
+                      "surface": "#f8f9fa",
+                      "surface-bright": "#f8f9fa",
+                      "on-primary-fixed-variant": "#3a4666",
+                      "on-primary": "#ffffff",
+                      "tertiary-fixed": "#6ffbbe",
+                      "primary": "#182442",
+                      "surface-dim": "#d9dadb",
+                      "tertiary": "#002c1b",
+                      "on-background": "#191c1d",
+                      "outline": "#75777e",
+                      "on-error": "#ffffff",
+                      "inverse-primary": "#bac6ec",
+                      "on-error-container": "#93000a",
+                      "on-secondary-fixed-variant": "#404754",
+                      "outline-variant": "#c6c6ce",
+                      "on-tertiary": "#ffffff",
+                      "on-tertiary-fixed": "#002113",
+                      "surface-container-high": "#e7e8e9",
+                      "error-container": "#ffdad6",
+                      "on-surface-variant": "#45464e",
+                      "on-primary-container": "#98a4c9",
+                      "inverse-surface": "#2e3132"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "stack-lg": "32px",
+                      "margin-desktop": "40px",
+                      "gutter": "24px",
+                      "container-max": "1280px",
+                      "stack-md": "16px",
+                      "margin-mobile": "16px",
+                      "unit": "4px",
+                      "stack-sm": "8px"
+              },
+              "fontFamily": {
+                      "headline-lg-mobile": [
+                              "\"Source Serif 4\""
+                      ],
+                      "headline-md": [
+                              "\"Source Serif 4\""
+                      ],
+                      "label-sm": [
+                              "Hanken Grotesk"
+                      ],
+                      "label-md": [
+                              "Hanken Grotesk"
+                      ],
+                      "display-lg": [
+                              "\"Source Serif 4\""
+                      ],
+                      "body-lg": [
+                              "Hanken Grotesk"
+                      ],
+                      "body-sm": [
+                              "Hanken Grotesk"
+                      ],
+                      "headline-lg": [
+                              "\"Source Serif 4\""
+                      ],
+                      "body-md": [
+                              "Hanken Grotesk"
+                      ]
+              },
+              "fontSize": {
+                      "headline-lg-mobile": [
+                              "24px",
+                              {
+                                      "lineHeight": "32px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "headline-md": [
+                              "24px",
+                              {
+                                      "lineHeight": "32px",
+                                      "fontWeight": "500"
+                              }
+                      ],
+                      "label-sm": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "letterSpacing": "0.03em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "label-md": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "letterSpacing": "0.01em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "display-lg": [
+                              "48px",
+                              {
+                                      "lineHeight": "56px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "body-lg": [
+                              "18px",
+                              {
+                                      "lineHeight": "28px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "body-sm": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "headline-lg": [
+                              "32px",
+                              {
+                                      "lineHeight": "40px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "body-md": [
+                              "16px",
+                              {
+                                      "lineHeight": "24px",
+                                      "fontWeight": "400"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+      </script>
+<style>
+        .material-symbols-outlined {
+          font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .icon-fill {
+            font-variation-settings: 'FILL' 1;
+        }
+      </style>
+</head>
+<body class="h-full flex antialiased text-on-surface">
+<!-- Suppressed navigation shell due to task-focused/workflow step context -->
+<main class="flex-1 w-full max-w-[container-max] mx-auto px-margin-mobile md:px-margin-desktop py-stack-lg flex flex-col h-full overflow-y-auto">
+<!-- Workflow Header & Progress -->
+<div class="mb-stack-lg w-full max-w-4xl mx-auto">
+<div class="flex items-center justify-between mb-stack-md">
+<button class="flex items-center text-secondary hover:text-primary transition-colors bg-transparent border-none p-0 cursor-pointer">
+<span class="material-symbols-outlined mr-2">arrow_back</span>
+<span class="font-label-md text-label-md">Back to Upload</span>
+</button>
+<div class="flex items-center space-x-2">
+<div class="w-8 h-8 rounded-full bg-surface-container-high flex items-center justify-center text-secondary font-label-sm text-label-sm">1</div>
+<div class="w-8 h-px bg-outline-variant"></div>
+<div class="w-8 h-8 rounded-full bg-surface-container-high flex items-center justify-center text-secondary font-label-sm text-label-sm">2</div>
+<div class="w-8 h-px bg-primary"></div>
+<div class="w-8 h-8 rounded-full bg-primary text-on-primary flex items-center justify-center font-label-sm text-label-sm shadow-sm border border-primary">3</div>
+</div>
+</div>
+<h1 class="font-headline-lg-mobile text-headline-lg-mobile md:font-headline-lg md:text-headline-lg text-primary mb-stack-sm">Parsed Transactions</h1>
+<p class="font-body-md text-body-md text-secondary">We found 142 transactions in Chase_Oct_2023.pdf.</p>
+</div>
+<!-- Data Table Container -->
+<div class="w-full max-w-4xl mx-auto flex-1 flex flex-col bg-surface-container-lowest border border-outline-variant rounded-lg overflow-hidden shadow-sm shadow-surface-container-high/20">
+<!-- Table Header Toolbar -->
+<div class="flex justify-between items-center px-gutter py-4 border-b border-surface-container-high bg-surface-bright">
+<div class="flex items-center space-x-4">
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-secondary text-sm">search</span>
+<input class="pl-9 pr-4 py-2 border border-outline-variant rounded font-body-sm text-body-sm text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/10 bg-surface-container-lowest w-64" placeholder="Search descriptions..." type="text">
+</div>
+</div>
+<div class="flex items-center space-x-4">
+<button class="flex items-center text-secondary hover:text-primary transition-colors text-sm font-label-md">
+<span class="material-symbols-outlined mr-1 text-sm">filter_list</span>
+                        Filter
+                    </button>
+<button class="flex items-center text-secondary hover:text-primary transition-colors text-sm font-label-md">
+<span class="material-symbols-outlined mr-1 text-sm">download</span>
+                        Export
+                    </button>
+</div>
+</div>
+<!-- Table -->
+<div class="flex-1 overflow-auto">
+<table class="w-full text-left border-collapse min-w-[800px]">
+<thead class="sticky top-0 bg-surface-container-low border-b border-surface-container-high z-10">
+<tr>
+<th class="py-2 px-gutter font-label-sm text-label-sm text-secondary uppercase tracking-wider font-semibold">Date</th>
+<th class="py-2 px-gutter font-label-sm text-label-sm text-secondary uppercase tracking-wider font-semibold">Description</th>
+<th class="py-2 px-gutter font-label-sm text-label-sm text-secondary uppercase tracking-wider font-semibold text-right">Debit</th>
+<th class="py-2 px-gutter font-label-sm text-label-sm text-secondary uppercase tracking-wider font-semibold text-right">Credit</th>
+<th class="py-2 px-gutter font-label-sm text-label-sm text-secondary uppercase tracking-wider font-semibold text-right">Balance</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-surface-container-high font-body-sm text-body-sm bg-surface-container-lowest text-secondary">
+<!-- Row 1 -->
+<tr class="hover:bg-surface-container-lowest/50 transition-colors group">
+<td class="py-2 px-gutter whitespace-nowrap">Oct 01, 2023</td>
+<td class="py-2 px-gutter text-on-surface font-medium truncate max-w-xs">AWS EMEA</td>
+<td class="py-2 px-gutter text-right text-primary whitespace-nowrap">$450.20</td>
+<td class="py-2 px-gutter text-right whitespace-nowrap">-</td>
+<td class="py-2 px-gutter text-right whitespace-nowrap">$12,450.00</td>
+</tr>
+<!-- Row 2 -->
+<tr class="hover:bg-surface-container-lowest/50 transition-colors group">
+<td class="py-2 px-gutter whitespace-nowrap">Oct 02, 2023</td>
+<td class="py-2 px-gutter text-on-surface font-medium truncate max-w-xs">Starbucks Store 14592</td>
+<td class="py-2 px-gutter text-right text-primary whitespace-nowrap">$14.50</td>
+<td class="py-2 px-gutter text-right whitespace-nowrap">-</td>
+<td class="py-2 px-gutter text-right whitespace-nowrap">$12,435.50</td>
+</tr>
+<!-- Row 3 -->
+<tr class="hover:bg-surface-container-lowest/50 transition-colors group">
+<td class="py-2 px-gutter whitespace-nowrap">Oct 03, 2023</td>
+<td class="py-2 px-gutter text-on-surface font-medium truncate max-w-xs">Stripe Transfer ID-84920</td>
+<td class="py-2 px-gutter text-right whitespace-nowrap">-</td>
+<td class="py-2 px-gutter text-right text-tertiary-container whitespace-nowrap font-medium">$4,250.00</td>
+<td class="py-2 px-gutter text-right whitespace-nowrap">$16,685.50</td>
+</tr>
+<!-- Row 4 -->
+<tr class="hover:bg-surface-container-lowest/50 transition-colors group">
+<td class="py-2 px-gutter whitespace-nowrap">Oct 05, 2023</td>
+<td class="py-2 px-gutter text-on-surface font-medium truncate max-w-xs">ACH Electronic Debit - Gusto Payroll</td>
+<td class="py-2 px-gutter text-right text-primary whitespace-nowrap">$8,450.00</td>
+<td class="py-2 px-gutter text-right whitespace-nowrap">-</td>
+<td class="py-2 px-gutter text-right whitespace-nowrap">$8,235.50</td>
+</tr>
+<!-- Row 5 -->
+<tr class="hover:bg-surface-container-lowest/50 transition-colors group">
+<td class="py-2 px-gutter whitespace-nowrap">Oct 05, 2023</td>
+<td class="py-2 px-gutter text-on-surface font-medium truncate max-w-xs">Rent Payment - Wework</td>
+<td class="py-2 px-gutter text-right text-primary whitespace-nowrap">$3,200.00</td>
+<td class="py-2 px-gutter text-right whitespace-nowrap">-</td>
+<td class="py-2 px-gutter text-right whitespace-nowrap">$5,035.50</td>
+</tr>
+<!-- Row 6 -->
+<tr class="hover:bg-surface-container-lowest/50 transition-colors group">
+<td class="py-2 px-gutter whitespace-nowrap">Oct 08, 2023</td>
+<td class="py-2 px-gutter text-on-surface font-medium truncate max-w-xs">Uber Trip Help.uber.com</td>
+<td class="py-2 px-gutter text-right text-primary whitespace-nowrap">$45.80</td>
+<td class="py-2 px-gutter text-right whitespace-nowrap">-</td>
+<td class="py-2 px-gutter text-right whitespace-nowrap">$4,989.70</td>
+</tr>
+<!-- Row 7 -->
+<tr class="hover:bg-surface-container-lowest/50 transition-colors group">
+<td class="py-2 px-gutter whitespace-nowrap">Oct 10, 2023</td>
+<td class="py-2 px-gutter text-on-surface font-medium truncate max-w-xs">Stripe Transfer ID-84925</td>
+<td class="py-2 px-gutter text-right whitespace-nowrap">-</td>
+<td class="py-2 px-gutter text-right text-tertiary-container whitespace-nowrap font-medium">$1,850.00</td>
+<td class="py-2 px-gutter text-right whitespace-nowrap">$6,839.70</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Table Footer Pagination -->
+<div class="border-t border-surface-container-high px-gutter py-3 flex items-center justify-between bg-surface-bright">
+<span class="font-body-sm text-body-sm text-secondary">Showing 1-7 of 142 transactions</span>
+<div class="flex items-center space-x-2">
+<button class="w-8 h-8 flex items-center justify-center border border-outline-variant rounded text-secondary hover:border-primary hover:text-primary transition-colors disabled:opacity-50" disabled="">
+<span class="material-symbols-outlined text-sm">chevron_left</span>
+</button>
+<button class="w-8 h-8 flex items-center justify-center border border-outline-variant rounded text-secondary hover:border-primary hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-sm">chevron_right</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Action Area -->
+<div class="mt-stack-lg w-full max-w-4xl mx-auto flex justify-end">
+<button class="bg-primary text-on-primary px-6 py-2 rounded font-label-md text-label-md hover:bg-primary/90 transition-colors flex items-center shadow-sm">
+                Find Invoice Candidates
+                <span class="material-symbols-outlined ml-2 text-sm">auto_awesome</span>
+</button>
+</div>
+</main>
+</body></html>

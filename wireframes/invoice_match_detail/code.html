@@ -1,0 +1,276 @@
+<!DOCTYPE html><html class="light" lang="en"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Invoice Match Detail</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="assets/css2-8845ea9eac47ace696f21a628a7e3d1b" rel="stylesheet">
+<link href="assets/css2-a39f5c6fcbb87b419667ec984d2e579a" rel="stylesheet">
+<link href="assets/css2-a39f5c6fcbb87b419667ec984d2e579a" rel="stylesheet">
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-secondary": "#ffffff",
+                        "on-primary-fixed": "#0d1a38",
+                        "secondary-container": "#dce2f3",
+                        "secondary": "#585f6c",
+                        "inverse-on-surface": "#f0f1f2",
+                        "surface-container-lowest": "#ffffff",
+                        "error": "#ba1a1a",
+                        "tertiary-container": "#00442d",
+                        "primary-container": "#2e3a59",
+                        "on-tertiary-fixed-variant": "#005236",
+                        "surface-tint": "#525e7f",
+                        "tertiary-fixed-dim": "#4edea3",
+                        "surface-container-low": "#f3f4f5",
+                        "surface-variant": "#e1e3e4",
+                        "primary-fixed-dim": "#bac6ec",
+                        "on-secondary-container": "#5e6572",
+                        "surface-container": "#edeeef",
+                        "secondary-fixed-dim": "#c0c7d6",
+                        "primary-fixed": "#dae2ff",
+                        "on-secondary-fixed": "#151c27",
+                        "background": "#f8f9fa",
+                        "surface-container-highest": "#e1e3e4",
+                        "on-surface": "#191c1d",
+                        "secondary-fixed": "#dce2f3",
+                        "on-tertiary-container": "#17bb83",
+                        "surface": "#f8f9fa",
+                        "surface-bright": "#f8f9fa",
+                        "on-primary-fixed-variant": "#3a4666",
+                        "on-primary": "#ffffff",
+                        "tertiary-fixed": "#6ffbbe",
+                        "primary": "#182442",
+                        "surface-dim": "#d9dadb",
+                        "tertiary": "#002c1b",
+                        "on-background": "#191c1d",
+                        "outline": "#75777e",
+                        "on-error": "#ffffff",
+                        "inverse-primary": "#bac6ec",
+                        "on-error-container": "#93000a",
+                        "on-secondary-fixed-variant": "#404754",
+                        "outline-variant": "#c6c6ce",
+                        "on-tertiary": "#ffffff",
+                        "on-tertiary-fixed": "#002113",
+                        "surface-container-high": "#e7e8e9",
+                        "error-container": "#ffdad6",
+                        "on-surface-variant": "#45464e",
+                        "on-primary-container": "#98a4c9",
+                        "inverse-surface": "#2e3132"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "stack-lg": "32px",
+                        "margin-desktop": "40px",
+                        "gutter": "24px",
+                        "container-max": "1280px",
+                        "stack-md": "16px",
+                        "margin-mobile": "16px",
+                        "unit": "4px",
+                        "stack-sm": "8px"
+                    },
+                    "fontFamily": {
+                        "headline-lg-mobile": ["\"Source Serif 4\""],
+                        "headline-md": ["\"Source Serif 4\""],
+                        "label-sm": ["Hanken Grotesk"],
+                        "label-md": ["Hanken Grotesk"],
+                        "display-lg": ["\"Source Serif 4\""],
+                        "body-lg": ["Hanken Grotesk"],
+                        "body-sm": ["Hanken Grotesk"],
+                        "headline-lg": ["\"Source Serif 4\""],
+                        "body-md": ["Hanken Grotesk"]
+                    },
+                    "fontSize": {
+                        "headline-lg-mobile": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "fontWeight": "500" }],
+                        "label-sm": ["12px", { "lineHeight": "16px", "letterSpacing": "0.03em", "fontWeight": "600" }],
+                        "label-md": ["14px", { "lineHeight": "20px", "letterSpacing": "0.01em", "fontWeight": "600" }],
+                        "display-lg": ["48px", { "lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "body-lg": ["18px", { "lineHeight": "28px", "fontWeight": "400" }],
+                        "body-sm": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "headline-lg": ["32px", { "lineHeight": "40px", "fontWeight": "600" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-background text-on-background min-h-screen flex antialiased">
+<!-- TopNavBar -->
+<nav class="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-margin-desktop h-16 bg-surface dark:bg-surface border-b border-outline-variant dark:border-outline">
+<div class="flex items-center gap-gutter">
+<span class="font-headline-lg text-headline-lg font-bold text-primary dark:text-primary-fixed-dim">Ledgerwick</span>
+<div class="hidden md:flex gap-gutter h-16 items-center">
+<a class="font-label-md text-label-md text-secondary dark:text-secondary-fixed-dim hover:text-primary dark:hover:text-primary-fixed-dim transition-colors" href="#">Dashboard</a>
+<a class="font-label-md text-label-md text-secondary dark:text-secondary-fixed-dim hover:text-primary dark:hover:text-primary-fixed-dim transition-colors" href="#">Reconciliations</a>
+<a class="font-label-md text-label-md text-secondary dark:text-secondary-fixed-dim hover:text-primary dark:hover:text-primary-fixed-dim transition-colors" href="#">Invoices</a>
+<a class="font-label-md text-label-md text-primary dark:text-primary-fixed-dim border-b-2 border-primary dark:border-primary-fixed-dim pb-1 hover:text-primary dark:hover:text-primary-fixed-dim transition-colors opacity-80 transition-opacity duration-200" href="#">Matching</a>
+</div>
+</div>
+<div class="flex items-center gap-stack-md">
+<button class="font-label-md text-label-md text-on-primary bg-primary px-4 py-2 rounded">New Reconciliation</button>
+<button class="text-secondary hover:text-primary transition-colors"><span class="material-symbols-outlined" data-icon="notifications">notifications</span></button>
+<button class="text-secondary hover:text-primary transition-colors"><span class="material-symbols-outlined" data-icon="settings">settings</span></button>
+<img alt="User profile" class="w-8 h-8 rounded-full object-cover border border-outline-variant" data-alt="A small, professional portrait of a business person in a well-lit office, used as a circular avatar profile picture. Crisp and clean aesthetic." src="assets/AB6AXuAHdelGHLZwcLZxGv672oeCdsbzzajJwTLtXVX4SA8K0mIKYZhziyjrDcMHurrw8iNQ0jTQgKcqtM-Jf7diiYZV-HRHVLCN-ae122d5d7bbc172944518d100292f242">
+</div>
+</nav>
+<!-- SideNavBar -->
+<aside class="hidden md:flex fixed left-0 top-0 h-full flex-col py-stack-lg border-r border-outline-variant dark:border-outline z-40 bg-surface-container-low dark:bg-surface-container-lowest docked left-0 h-full w-64 pt-24">
+<div class="px-4 mb-stack-lg flex items-center gap-stack-md">
+<img alt="Company Logo" class="w-10 h-10 rounded object-cover border border-outline-variant" data-alt="A minimalist geometric logo design in navy blue and white, representing a modern financial institution." src="assets/AB6AXuBOmKliPOJeD6DesFGTZIoUHzyeS5UoII3M8Yt7f3nKpqdd_kF5chkOKRlWrbui9ZyvtX98FS4VikF43DsK2NFyKmB3AIn0-a8a38e06220552c265887210e16f567b">
+<div>
+<h2 class="font-headline-md text-headline-md font-semibold text-primary dark:text-primary-fixed-dim">Ledgerwick</h2>
+<p class="font-label-sm text-label-sm text-secondary">Financial Ops</p>
+</div>
+</div>
+<nav class="flex-1 flex flex-col gap-unit px-2">
+<a class="font-label-md text-label-md flex items-center gap-stack-md text-secondary dark:text-secondary-fixed-dim px-4 py-2 hover:bg-surface-container-high dark:hover:bg-surface-container hover:text-primary dark:hover:text-primary-fixed-dim transition-all rounded-lg" href="#">
+<span class="material-symbols-outlined" data-icon="home">home</span> Home
+            </a>
+<a class="font-label-md text-label-md flex items-center gap-stack-md text-secondary dark:text-secondary-fixed-dim px-4 py-2 hover:bg-surface-container-high dark:hover:bg-surface-container hover:text-primary dark:hover:text-primary-fixed-dim transition-all rounded-lg" href="#">
+<span class="material-symbols-outlined" data-icon="account_tree">account_tree</span> Connections
+            </a>
+<a class="font-label-md text-label-md flex items-center gap-stack-md text-secondary dark:text-secondary-fixed-dim px-4 py-2 hover:bg-surface-container-high dark:hover:bg-surface-container hover:text-primary dark:hover:text-primary-fixed-dim transition-all rounded-lg" href="#">
+<span class="material-symbols-outlined" data-icon="upload_file">upload_file</span> Statements
+            </a>
+<a class="font-label-md text-label-md flex items-center gap-stack-md bg-secondary-container dark:bg-primary-container text-on-secondary-container dark:text-on-primary-container rounded-lg font-bold px-4 py-2 scale-95 transition-transform duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="Rule">subdirectory_arrow_right</span> Matching
+            </a>
+<a class="font-label-md text-label-md flex items-center gap-stack-md text-secondary dark:text-secondary-fixed-dim px-4 py-2 hover:bg-surface-container-high dark:hover:bg-surface-container hover:text-primary dark:hover:text-primary-fixed-dim transition-all rounded-lg" href="#">
+<span class="material-symbols-outlined" data-icon="ios_share">ios_share</span> Exports
+            </a>
+</nav>
+<div class="px-4 mt-auto flex flex-col gap-stack-md">
+<button class="w-full font-label-md text-label-md text-on-primary bg-primary py-2 rounded hover:bg-primary-container transition-colors">Upgrade Plan</button>
+<div class="flex flex-col gap-unit">
+<a class="font-label-md text-label-md flex items-center gap-stack-md text-secondary dark:text-secondary-fixed-dim px-4 py-2 hover:bg-surface-container-high dark:hover:bg-surface-container transition-all rounded-lg" href="#">
+<span class="material-symbols-outlined" data-icon="help">help</span> Support
+                </a>
+<a class="font-label-md text-label-md flex items-center gap-stack-md text-secondary dark:text-secondary-fixed-dim px-4 py-2 hover:bg-surface-container-high dark:hover:bg-surface-container transition-all rounded-lg" href="#">
+<span class="material-symbols-outlined" data-icon="logout">logout</span> Sign Out
+                </a>
+</div>
+</div>
+</aside>
+<!-- Main Canvas Content -->
+<main class="flex-1 ml-0 md:ml-64 pt-16 p-margin-mobile md:p-margin-desktop flex justify-center relative">
+<!-- Overlay / Background for Slide-over context -->
+<div class="absolute inset-0 bg-secondary/10 pointer-events-none z-0"></div>
+<!-- Slide-over Modal Container -->
+<div class="relative z-10 w-full max-w-5xl bg-surface-container-lowest border border-outline-variant rounded shadow-[0px_10px_15px_-3px_rgba(0,0,0,0.05)] flex flex-col my-stack-lg self-start overflow-hidden">
+<!-- Header -->
+<header class="flex justify-between items-center px-gutter py-stack-md border-b border-surface-container-high bg-surface">
+<div>
+<h1 class="font-headline-md text-headline-md text-on-surface">Match Details</h1>
+<p class="font-body-sm text-body-sm text-secondary mt-1">Reviewing potential match for AWS Transaction</p>
+</div>
+<div class="flex gap-stack-sm">
+<button class="px-4 py-2 font-label-md text-label-md text-secondary border border-outline-variant rounded hover:border-primary hover:text-primary transition-colors bg-surface-container-lowest">Reject Match</button>
+<button class="px-4 py-2 font-label-md text-label-md text-on-primary bg-primary rounded hover:bg-primary-container transition-colors shadow-sm">Confirm Match</button>
+</div>
+</header>
+<!-- Match Reasoning Banner -->
+<div class="bg-surface-container-low px-gutter py-stack-md border-b border-surface-container-high flex gap-gutter items-start">
+<div class="bg-tertiary-fixed-dim/20 p-2 rounded-full flex-shrink-0 mt-1">
+<span class="material-symbols-outlined text-on-tertiary-container text-xl" data-icon="check_circle">check_circle</span>
+</div>
+<div>
+<h3 class="font-label-md text-label-md text-on-surface mb-2">Why they match</h3>
+<ul class="font-body-sm text-body-sm text-secondary space-y-1">
+<li class="flex items-center gap-2"><span class="w-1.5 h-1.5 bg-tertiary-fixed-dim rounded-full"></span> Amount matches exactly ($342.10)</li>
+<li class="flex items-center gap-2"><span class="w-1.5 h-1.5 bg-tertiary-fixed-dim rounded-full"></span> Vendor name matches closely (AWS vs Amazon Web Services)</li>
+<li class="flex items-center gap-2"><span class="w-1.5 h-1.5 bg-tertiary-fixed-dim rounded-full"></span> Date is within acceptable range (±2 days)</li>
+</ul>
+</div>
+</div>
+<!-- Comparison Area -->
+<div class="flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x divide-surface-container-high bg-surface-container-lowest flex-1">
+<!-- Transaction Side -->
+<div class="flex-1 p-gutter flex flex-col">
+<div class="flex items-center gap-2 mb-stack-md text-secondary">
+<span class="material-symbols-outlined text-sm" data-icon="account_balance">account_balance</span>
+<h2 class="font-label-md text-label-md uppercase tracking-wider text-xs">Bank Transaction</h2>
+</div>
+<div class="bg-surface-container border border-surface-variant rounded p-stack-md mb-stack-md flex-1">
+<div class="flex justify-between items-start mb-stack-lg border-b border-surface-variant pb-stack-sm">
+<div>
+<p class="font-body-sm text-body-sm text-secondary mb-1">Description</p>
+<p class="font-body-lg text-body-lg text-on-surface font-semibold">Amazon Web Services</p>
+</div>
+<div class="text-right">
+<p class="font-body-sm text-body-sm text-secondary mb-1">Amount</p>
+<p class="font-headline-md text-headline-md text-primary">$342.10</p>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-stack-md">
+<div>
+<p class="font-body-sm text-body-sm text-secondary mb-1">Date</p>
+<p class="font-body-md text-body-md text-on-surface">Oct 14, 2023</p>
+</div>
+<div>
+<p class="font-body-sm text-body-sm text-secondary mb-1">Account</p>
+<p class="font-body-md text-body-md text-on-surface">Silicon Valley Bank ...4321</p>
+</div>
+<div>
+<p class="font-body-sm text-body-sm text-secondary mb-1">Transaction ID</p>
+<p class="font-body-md text-body-md text-on-surface font-mono text-sm">TX-9843-BNK</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Invoice Side -->
+<div class="flex-1 p-gutter flex flex-col">
+<div class="flex justify-between items-center mb-stack-md">
+<div class="flex items-center gap-2 text-secondary">
+<span class="material-symbols-outlined text-sm" data-icon="receipt">receipt</span>
+<h2 class="font-label-md text-label-md uppercase tracking-wider text-xs">Invoice Document</h2>
+</div>
+<a class="font-label-sm text-label-sm flex items-center gap-1 text-primary hover:underline" href="#">
+<span class="material-symbols-outlined text-sm" data-icon="attach_file">attach_file</span> View Source
+                        </a>
+</div>
+<div class="bg-surface-container border border-surface-variant rounded p-stack-md mb-stack-md flex-1">
+<div class="flex justify-between items-start mb-stack-lg border-b border-surface-variant pb-stack-sm">
+<div>
+<p class="font-body-sm text-body-sm text-secondary mb-1">Sender</p>
+<p class="font-body-lg text-body-lg text-on-surface font-semibold">AWS Billing</p>
+</div>
+<div class="text-right">
+<p class="font-body-sm text-body-sm text-secondary mb-1">Amount Due</p>
+<p class="font-headline-md text-headline-md text-primary">$342.10</p>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-stack-md mb-stack-lg">
+<div>
+<p class="font-body-sm text-body-sm text-secondary mb-1">Date Issued</p>
+<p class="font-body-md text-body-md text-on-surface">Oct 12, 2023</p>
+</div>
+<div>
+<p class="font-body-sm text-body-sm text-secondary mb-1">Invoice #</p>
+<p class="font-body-md text-body-md text-on-surface font-mono text-sm">INV-2023-10-AWS</p>
+</div>
+</div>
+<!-- Snippet of invoice visually -->
+<div class="mt-auto border border-outline-variant bg-surface-container-lowest p-2 rounded flex items-center gap-3">
+<div class="w-10 h-12 bg-surface-variant rounded flex items-center justify-center">
+<span class="material-symbols-outlined text-secondary" data-icon="description">description</span>
+</div>
+<div>
+<p class="font-label-sm text-label-sm text-on-surface">aws_invoice_oct23.pdf</p>
+<p class="font-body-sm text-body-sm text-secondary text-xs">45 KB • Parsed via OCR</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+</body></html>
