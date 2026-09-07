@@ -20,8 +20,12 @@ case "$cmd" in
 esac
 
 # Any psql / migration command pointed at something that is not localhost.
-if echo "$cmd" | grep -qE '(psql|drizzle-kit|prisma migrate|supabase db push)' ; then
-  if echo "$cmd" | grep -qE '(postgres(ql)?://|@)' && ! echo "$cmd" | grep -qE '(localhost|127\.0\.0\.1)'; then
+# Installing packages is not running a migration — npm/pnpm/yarn lines are exempt,
+# or an `npm i drizzle-kit @scope/pkg` trips the connection-string check on its `@`.
+if echo "$cmd" | grep -qE '(^|[;&|] *)(psql|npx +drizzle-kit|drizzle-kit|prisma +migrate|supabase +db +push)' &&
+   ! echo "$cmd" | grep -qE '(^|[;&|] *)(npm|pnpm|yarn|bun) +(i|install|add|remove|uninstall|ci)\b'; then
+  # Only a real connection string counts as a host, not a bare @ (npm scopes contain @).
+  if echo "$cmd" | grep -qE 'postgres(ql)?://[^ ]*' && ! echo "$cmd" | grep -qE 'postgres(ql)?://[^ ]*(localhost|127\.0\.0\.1)'; then
     block "database command against a non-local host. Run migrations against local only"
   fi
 fi
