@@ -13,10 +13,7 @@ export default function LandingPage() {
     <div className={styles.page}>
       <header className={styles.header}>
         <div className={styles.brand}>
-          <span
-            className={`material-symbols-outlined ${styles.brandIcon}`}
-            aria-hidden="true"
-          >
+          <span className={`material-symbols-outlined ${styles.brandIcon}`} aria-hidden="true">
             account_balance
           </span>
           <span className={styles.brandName}>Ledgerwick</span>
@@ -33,16 +30,10 @@ export default function LandingPage() {
           </a>
         </nav>
         <div className={styles.headerActions}>
-          <Link
-            className={`${styles.btn} ${styles.btnSecondaryHeader}`}
-            href="/login"
-          >
+          <Link className={`${styles.btn} ${styles.btnSecondaryHeader}`} href="/login">
             Log In
           </Link>
-          <Link
-            className={`${styles.btn} ${styles.btnPrimaryHeader}`}
-            href="/login"
-          >
+          <Link className={`${styles.btn} ${styles.btnPrimaryHeader}`} href="/login">
             Get Started
           </Link>
         </div>
@@ -54,29 +45,19 @@ export default function LandingPage() {
             Reconcile your bank statements with your inbox in seconds.
           </h1>
           <p className={styles.heroCopy}>
-            Ledgerwick automatically finds invoices in your Gmail and matches
-            them to your bank transactions. Stop chasing receipts and start
-            closing your books.
+            Ledgerwick automatically finds invoices in your Gmail and matches them to your bank
+            transactions. Stop chasing receipts and start closing your books.
           </p>
           <div className={styles.heroActions}>
-            <Link
-              className={`${styles.btn} ${styles.btnPrimaryHero}`}
-              href="/login"
-            >
+            <Link className={`${styles.btn} ${styles.btnPrimaryHero}`} href="/login">
               Get Started
             </Link>
-            <Link
-              className={`${styles.btn} ${styles.btnSecondaryHero}`}
-              href="/login"
-            >
+            <Link className={`${styles.btn} ${styles.btnSecondaryHero}`} href="/login">
               Log In
             </Link>
           </div>
           <div className={styles.trust}>
-            <span
-              className={`material-symbols-outlined ${styles.trustIcon}`}
-              aria-hidden="true"
-            >
+            <span className={`material-symbols-outlined ${styles.trustIcon}`} aria-hidden="true">
               verified_user
             </span>
             <span className={styles.trustText}>
@@ -95,21 +76,14 @@ export default function LandingPage() {
               <div className={styles.mockList}>
                 <div className={styles.matchRow}>
                   <div className={styles.rowLeft}>
-                    <div
-                      className={`${styles.rowIcon} ${styles.rowIconMatched}`}
-                    >
-                      <span
-                        className="material-symbols-outlined"
-                        aria-hidden="true"
-                      >
+                    <div className={`${styles.rowIcon} ${styles.rowIconMatched}`}>
+                      <span className="material-symbols-outlined" aria-hidden="true">
                         mail
                       </span>
                     </div>
                     <div className={styles.rowCopy}>
                       <p className={styles.rowTitle}>Acme Corp Invoice #204</p>
-                      <p className={styles.rowMeta}>
-                        Found in inbox: billing@acme.com
-                      </p>
+                      <p className={styles.rowMeta}>Found in inbox: billing@acme.com</p>
                     </div>
                   </div>
                   <div className={styles.rowRight}>
@@ -131,13 +105,8 @@ export default function LandingPage() {
 
                 <div className={styles.pendingRow}>
                   <div className={styles.rowLeft}>
-                    <div
-                      className={`${styles.rowIcon} ${styles.rowIconPending}`}
-                    >
-                      <span
-                        className="material-symbols-outlined"
-                        aria-hidden="true"
-                      >
+                    <div className={`${styles.rowIcon} ${styles.rowIconPending}`}>
+                      <span className="material-symbols-outlined" aria-hidden="true">
                         receipt_long
                       </span>
                     </div>
@@ -154,13 +123,8 @@ export default function LandingPage() {
 
                 <div className={styles.pendingRow}>
                   <div className={styles.rowLeft}>
-                    <div
-                      className={`${styles.rowIcon} ${styles.rowIconPending}`}
-                    >
-                      <span
-                        className="material-symbols-outlined"
-                        aria-hidden="true"
-                      >
+                    <div className={`${styles.rowIcon} ${styles.rowIconPending}`}>
+                      <span className="material-symbols-outlined" aria-hidden="true">
                         receipt_long
                       </span>
                     </div>
@@ -184,23 +148,20 @@ export default function LandingPage() {
                 </div>
                 <h4 className={styles.featureTitle}>Automated Matching</h4>
                 <p className={styles.featureCopy}>
-                  Our semantic engine reads your receipts and bank feeds,
-                  pairing them automatically based on date, amount, and vendor.
+                  Our semantic engine reads your receipts and bank feeds, pairing them automatically
+                  based on date, amount, and vendor.
                 </p>
               </div>
               <div className={styles.securityCard} id="security">
                 <div className={styles.securityHeading}>
-                  <span
-                    className="material-symbols-outlined"
-                    aria-hidden="true"
-                  >
+                  <span className="material-symbols-outlined" aria-hidden="true">
                     lock
                   </span>
                   <h4 className={styles.securityTitle}>Bank-Grade Security</h4>
                 </div>
                 <p className={styles.securityCopy}>
-                  Read-only access to your financial data. We never move your
-                  money or store your banking credentials.
+                  Read-only access to your financial data. We never move your money or store your
+                  banking credentials.
                 </p>
               </div>
             </div>

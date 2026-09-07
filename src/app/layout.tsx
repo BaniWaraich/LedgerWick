@@ -27,10 +27,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${sourceSerif.variable} ${hankenGrotesk.variable}`}
-    >
+    <html lang="en" className={`${sourceSerif.variable} ${hankenGrotesk.variable}`}>
       <head>
         <link
           rel="stylesheet"

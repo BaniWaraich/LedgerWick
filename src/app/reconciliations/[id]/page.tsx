@@ -2,9 +2,7 @@ type ReconciliationPageProps = {
   params: Promise<{ id: string }>;
 };
 
-export default async function ReconciliationPage({
-  params,
-}: ReconciliationPageProps) {
+export default async function ReconciliationPage({ params }: ReconciliationPageProps) {
   const { id } = await params;
 
   return (
