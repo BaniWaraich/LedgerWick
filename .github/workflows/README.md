@@ -1,0 +1,23 @@
+# CI
+
+`ci.yml` runs on every pull request and on pushes to `main`.
+
+| Job       | Blocking | What                                                  |
+| --------- | -------- | ----------------------------------------------------- |
+| `verify`  | yes      | typecheck, lint, format check, tests, build           |
+| `hygiene` | no       | knip (dead code), depcheck (unused deps), `npm audit` |
+| `secrets` | yes      | gitleaks over full history                            |
+
+`hygiene` is advisory on purpose. Dead-code and dependency reports are noisy on a young
+codebase, and a merge blocked on a false positive teaches people to ignore CI. It reports;
+it does not gate.
+
+Deployment is handled by Vercel's own GitHub integration — preview per PR, production on
+`main`. CI here verifies; it does not deploy, and deployment is not gated on it. If that
+gating is wanted, enable "wait for CI" in the Vercel project's Git settings rather than
+adding a deploy step here.
+
+## Branch protection
+
+Not configured by this repository. To make CI meaningful, require the `verify` and
+`secrets` checks on `main` in the repository settings.

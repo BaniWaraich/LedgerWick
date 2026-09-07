@@ -95,11 +95,37 @@ Delete obsolete code instead of leaving dead alternatives behind.
 
 ### 8. Git history matters
 
-Each commit should represent one coherent change.
+The history should read as the story of how this system came to be. Someone should be
+able to follow it and understand not just what the code became, but why it went that way.
 
-Commit messages should explain what changed, not what files were touched.
+Each commit is one coherent change. Prefer small, reviewable commits.
 
-Prefer small, reviewable commits.
+**Format is enforced.** `commitlint` rejects anything that is not a conventional commit,
+and the hook runs on every commit:
+
+```
+<type>(<optional scope>): <subject>
+
+<body: why this change, what it replaces, what it trades away>
+```
+
+Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `build`, `ci`, `perf`.
+
+**The subject says what changed, not which files were touched.** `fix: prevent duplicate
+transactions from overlapping statements`, never `fix: update parser.ts`.
+
+**The body carries the why.** This is the part that makes history a story rather than a
+list. For anything non-trivial, say what the problem was and why this approach — a diff
+shows what changed and can never show what was rejected.
+
+Reference a decision record (`docs/decisions/`) when the reasoning is larger than a commit
+body.
+
+**Do not mix kinds of change in one commit.** Formatting, refactoring, and behaviour
+belong in separate commits. A behavioural change buried in a thousand lines of reformatting
+is unreviewable, and that is how bugs get merged.
+
+**Never rewrite pushed history.** No force pushes, no rebasing what others may have pulled.
 
 ### 9. Explain important decisions
 
