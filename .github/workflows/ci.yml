@@ -54,6 +54,10 @@ jobs:
         run: npm run check:dead
       - name: Unused dependencies
         run: npm run check:deps
+      # Expected to fail until the Next 16 upgrade. A high-severity postcss
+      # advisory reaches us transitively through Next 15, and the only fix is a
+      # major upgrade. Deliberately deferred — see docs/decisions/0002.
+      # A red hygiene job is not, on its own, a new problem. Read the log.
       - name: Audit
         run: npm audit --audit-level=high
 
