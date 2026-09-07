@@ -15,23 +15,23 @@
     "typecheck": "tsc --noEmit",
     "check:dead": "knip",
     "check:deps": "depcheck --ignores=\"eslint-config-next,@commitlint/*,husky,lint-staged,knip,depcheck,prettier,@types/*\"",
-    "prepare": "husky"
+    "prepare": "husky",
+    "lock:refresh": "rm -rf node_modules package-lock.json && npm install"
   },
   "dependencies": {
-    "next": "^15.5.0",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "next": "^16.3.4",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.2.2",
     "@commitlint/config-conventional": "^21.2.2",
-    "@eslint/eslintrc": "^3.3.7",
     "@types/node": "^22.0.0",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
     "depcheck": "^1.4.7",
     "eslint": "^9.39.5",
-    "eslint-config-next": "^15.5.25",
+    "eslint-config-next": "^16.3.4",
     "husky": "^9.1.7",
     "knip": "^6.34.0",
     "lint-staged": "^17.5.0",

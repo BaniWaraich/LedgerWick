@@ -30,6 +30,31 @@ Deployment is handled by Vercel's own GitHub integration — preview per PR, pro
 gating is wanted, enable "wait for CI" in the Vercel project's Git settings rather than
 adding a deploy step here.
 
+## If `npm ci` fails with "Missing: @emnapi/... from lock file"
+
+This has happened twice. It is not a real dependency problem.
+
+`@emnapi/core` and `@emnapi/runtime` arrive as optional, platform-specific
+dependencies of the resolver that `eslint-config-next` pulls in. An incremental
+`npm install` on macOS records them nested under the wasm binding package; a Linux
+install expects them hoisted to the top level. The lock is then valid locally and
+unusable in CI.
+
+Incremental installs reintroduce it, so after any dependency change that alters the
+lock, regenerate it cleanly rather than trusting the incremental result:
+
+```
+npm run lock:refresh
+```
+
+Then commit the lockfile. Verify before pushing:
+
+```
+node -e "const l=require('./package-lock.json'); console.log(['node_modules/@emnapi/core','node_modules/@emnapi/runtime'].filter(k=>l.packages[k]))"
+```
+
+Both paths should be listed. If they are not, CI will fail.
+
 ## Branch protection
 
 Not configured by this repository. To make CI meaningful, require the `verify` and
