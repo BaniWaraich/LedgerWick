@@ -1,6 +1,8 @@
 # 0002 — Defer the Next 16 upgrade
 
-Status: Accepted · 2026-09-07
+Status: Resolved · 2026-09-07 — the upgrade landed in PR #1 the same day; `npm audit`
+now reports zero vulnerabilities. Kept for the reasoning and the revisit triggers, which
+still apply if a similar advisory appears.
 
 ## Context
 

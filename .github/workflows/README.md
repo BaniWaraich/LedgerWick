@@ -12,23 +12,23 @@
 codebase, and a merge blocked on a false positive teaches people to ignore CI. It reports;
 it does not gate.
 
-## Why hygiene is currently red
+## Reading a red hygiene job
 
-**It is expected to be red, and has been since it was added.** `npm audit` reports a
-high-severity postcss advisory that reaches us transitively through Next 15. Fixing it
-requires Next 16, which is deferred — see `docs/decisions/0002-defer-next-16-upgrade.md`.
+The audit finding that made this job red from the day it was added is gone — Next 16
+landed in #1 and `npm audit` reports zero vulnerabilities. See
+`docs/decisions/0002-defer-next-16-upgrade.md`, now resolved.
 
-So a red `hygiene` job is not by itself a signal that anything changed. Open the log and
-check whether the failure is the known audit finding or something new. `knip` and
-`depcheck` failing _are_ new findings and worth acting on.
+So a red hygiene job means something again. Open the log and read it:
 
-This will stay red until the Next 16 upgrade lands, at which point the job should go green
-and stay that way.
+- **`npm audit`** — a new advisory. Worth a decision, and worth recording if the answer is
+  to defer.
+- **`knip`** — dead code. Usually real. Delete it rather than suppressing it
+  (`AGENTS.md` #7).
+- **`depcheck`** — a dependency nothing imports.
 
-Deployment is handled by Vercel's own GitHub integration — preview per PR, production on
-`main`. CI here verifies; it does not deploy, and deployment is not gated on it. If that
-gating is wanted, enable "wait for CI" in the Vercel project's Git settings rather than
-adding a deploy step here.
+It stays advisory rather than blocking, because these reports are noisy on a young
+codebase and a merge stopped by a false positive teaches people to ignore CI. Advisory
+does not mean ignorable.
 
 ## If `npm ci` fails with "Missing: @emnapi/... from lock file"
 

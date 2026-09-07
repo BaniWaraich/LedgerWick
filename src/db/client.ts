@@ -33,8 +33,3 @@ export function getDb(): Database {
   if (!instance) instance = createDb();
   return instance;
 }
-
-/** Point the module at an existing connection. Tests use this; nothing else should. */
-export function setDb(db: Database | null): void {
-  instance = db;
-}
