@@ -108,9 +108,35 @@ interpreted.
 
 The system extracts the transactions and relevant balance information from the statement.
 
-The implementation may use different parsing strategies depending on the file and statement format.
+Parsing follows one rule, fixed by `docs/decisions/0003-llm-for-structure-not-values.md`:
 
-The parsing implementation is intentionally not fixed by this workflow.
+> **A model identifies structure. Code reads values.**
+
+There are no per-bank parsers. There is one structural inference step and one deterministic
+walker.
+
+**CSV and text-based PDF.** A model sees a representative sample once per file — the header
+and a few rows, or extracted text and coordinates — and returns a mapping from the file's
+columns to a fixed internal vocabulary:
+
+```text
+date · description · debit · credit · balance
+```
+
+Code then walks the whole document using that mapping. Every amount, date and description
+is read deterministically. The model never sees most rows, and never reports a number that
+reaches the database.
+
+The mapping is a schema-validated model output. A mapping that fails validation fails the
+statement; it is not guessed at.
+
+**Scanned PDF.** No embedded text exists, so OCR or a vision-capable model reads the page
+directly. Here the model _is_ reading values, with no deterministic layer beneath it. This
+path carries a higher error rate, and the system should not present its results with the
+same confidence as the other two.
+
+The choice between paths is made from the document itself — whether usable embedded text
+exists — not from the file extension.
 
 ### Step 5 — Validate
 
@@ -187,6 +213,25 @@ bound Bank Account.
 Coverage is what later allows the system to tell the user which periods are still missing,
 and to tell a reconciliation run which transactions it has already seen.
 
+### Step 5c — What the balance check does not catch
+
+The balance equation is one guardrail, not the only one required.
+
+It catches magnitude errors well — a swapped debit/credit mapping shifts the total and
+shows up immediately, which is exactly the failure the structural inference step could
+plausibly produce.
+
+It is blind to:
+
+- two errors that cancel out,
+- a corrupted or misattributed **date**,
+- a corrupted **description**.
+
+The last two matter downstream rather than here. Reconciliation matches on vendor and date
+proximity, so a statement can balance perfectly and still produce wrong matches. Validation
+beyond the balance equation is required, and treating a passing balance as proof the parse
+was correct is a mistake.
+
 ### Step 6 — Present result
 
 The system presents a concise processing summary to the user.
@@ -262,6 +307,15 @@ A discrepancy may indicate:
 - Other information required for reconciliation could not be reliably extracted.
 
 A discrepancy does **not** necessarily mean that processing failed.
+
+### Discrepancies on scanned input
+
+On CSV and text-based PDF a mismatch suggests the column mapping may be wrong, and
+re-deriving it is reasonable.
+
+On scanned input it suggests the **values** may be wrong, and no amount of retrying makes a
+misread digit correct. A balance mismatch on a scanned statement is therefore flagged for
+manual review — never retried into acceptance, never silently accepted.
 
 The system successfully processed the document but does not have sufficient confidence in the extracted result.
 
@@ -411,11 +465,14 @@ This workflow defines **what the system must accomplish**, not how it must accom
 
 The implementation may use:
 
-- Deterministic parsers
-- OCR
-- LLMs
-- Specialized bank-specific parsing logic
+- Deterministic walkers over an inferred structure
+- OCR or vision models, for scanned documents only
+- LLMs, for structural inference
 - Other processing techniques
+
+It should **not** use bank-specific parsing logic. There are 100+ Indian statement formats,
+they change without notice, and a per-bank parser cannot address a scanned statement at
+all. See `docs/decisions/0003-llm-for-structure-not-values.md`.
 
 The specific implementation should remain replaceable.
 
