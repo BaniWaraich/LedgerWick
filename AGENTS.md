@@ -15,6 +15,28 @@ The MVP flow is:
 7. Generate Excel
 8. Report missing/unresolved invoices
 
+## Specifications
+
+Read before changing anything in the relevant area. These are the contract; the code
+follows them, not the other way round.
+
+| Document                     | Read it when                                           |
+| ---------------------------- | ------------------------------------------------------ |
+| `docs/glossary.md`           | Always. One concept, one name.                         |
+| `docs/state-machines.md`     | Touching any state. Do not invent states.              |
+| `docs/domain-model.md`       | Touching domain entities or invariants.                |
+| `docs/architecture.md`       | Touching boundaries, storage, workflows, or AI usage.  |
+| `docs/workflows/*.md`        | Implementing that workflow.                            |
+| `docs/definition-of-done.md` | Before claiming a change is finished.                  |
+| `docs/testing-strategy.md`   | Writing tests, fixtures, or evals.                     |
+| `docs/decisions/`            | Making or revisiting a significant technical decision. |
+
+If a change requires contradicting one of these, update the document in the same change or
+say so. Do not let code and specification drift apart silently.
+
+Items marked **OPEN DECISION** in the docs are genuinely unsettled. Surface them; do not
+resolve them silently.
+
 ## Engineering Principles
 
 ### 1. Prefer simple systems
@@ -51,11 +73,11 @@ When fixing a bug, first reproduce it with a test when practical.
 
 Keep business logic separate from:
 
-* UI
-* database access
-* external APIs
-* LLM providers
-* authentication
+- UI
+- database access
+- external APIs
+- LLM providers
+- authentication
 
 External dependencies should be replaceable where practical.
 
@@ -83,10 +105,10 @@ Prefer small, reviewable commits.
 
 When making a significant technical decision, record:
 
-* the problem
-* the options considered
-* the decision
-* why it was chosen
+- the problem
+- the options considered
+- the decision
+- why it was chosen
 
 Do not create documentation for trivial decisions.
 
@@ -96,10 +118,10 @@ AI may propose and implement changes, but the developer remains responsible for 
 
 Before accepting a significant change:
 
-* understand what it does
-* understand why it is needed
-* inspect the diff
-* run the relevant tests
-* verify that it respects the architecture
+- understand what it does
+- understand why it is needed
+- inspect the diff
+- run the relevant tests
+- verify that it respects the architecture
 
 Never blindly accept generated code.
