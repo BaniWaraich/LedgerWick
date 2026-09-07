@@ -15,7 +15,8 @@
     "typecheck": "tsc --noEmit",
     "check:dead": "knip",
     "check:deps": "depcheck --ignores=\"eslint-config-next,@commitlint/*,husky,lint-staged,knip,depcheck,prettier,@types/*\"",
-    "prepare": "husky"
+    "prepare": "husky",
+    "lock:refresh": "rm -rf node_modules package-lock.json && npm install"
   },
   "dependencies": {
     "next": "^16.3.4",
