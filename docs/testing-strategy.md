@@ -70,6 +70,13 @@ fixtures/
 uniformly well-formed statements are exactly the ones parsers already handle. The value is
 in the awkward ones.
 
+This matters more under `docs/decisions/0003-llm-for-structure-not-values.md` than it did
+before. Fixtures no longer pin down known formats for hand-written parsers — there are no
+per-bank parsers. They exist to demonstrate that **column mapping generalizes across real
+variety**. A fixture set of well-behaved statements proves nothing about the one property
+the design depends on. Awkward statements are now the most valuable fixtures, not the ones
+to get to later.
+
 **Redaction is mandatory and manual.** Account numbers, names, addresses, and balances are
 replaced before a file enters the repository. A real customer statement must never be
 committed. If in doubt, do not commit it.
@@ -94,6 +101,7 @@ whichever output looked good in the moment.
 
 | Question                          | Measure                                                                   |
 | --------------------------------- | ------------------------------------------------------------------------- |
+| Does column mapping generalize? | Mapping accuracy on held-out real statements from banks not in the fixture set |
 | Which OCR provider?               | Field-level extraction accuracy across clean PDFs, scans, and photographs |
 | Which model for extraction?       | Field accuracy, schema-valid output rate, cost, latency                   |
 | Which matching thresholds?        | Precision, recall, false-positive rate, how often the user is asked       |

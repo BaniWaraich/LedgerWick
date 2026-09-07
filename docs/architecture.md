@@ -436,6 +436,22 @@ Validation
 Invoice Domain Data
 ```
 
+## 8.0 Bank statement parsing
+
+Bank statements follow a specific rule, fixed by
+`docs/decisions/0003-llm-for-structure-not-values.md`: a model identifies **structure**, and
+code reads **values**.
+
+For CSV and text-based PDFs, a model maps the file's columns to a fixed internal vocabulary
+from a small sample, and deterministic code then walks every row using that mapping. The
+model never reports a number that reaches the database.
+
+Scanned statements have no embedded text, so a model reads values directly. That path is
+acknowledged as higher-risk and its balance mismatches go to manual review rather than
+retry.
+
+There are no per-bank parsers.
+
 ## 8.1 Deterministic processing first
 
 Where reliable deterministic methods exist, they should be preferred.
