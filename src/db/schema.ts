@@ -91,10 +91,10 @@ export const directionEnum = pgEnum("direction", ["DEBIT", "CREDIT"]);
 /* ------------------------------------------------------------------ identity */
 
 /**
- * Mirrors the authenticated user. `id` is the Supabase Auth user id.
+ * The application's user record, and the Auth.js user table (decision 0005).
  *
- * Kept as its own table rather than referencing `auth.users` directly so that the schema
- * stands alone — tests run against a bare Postgres with no auth schema present.
+ * Identities live here rather than in an auth vendor's store, which is the point: moving
+ * auth providers must not mean abandoning the user table.
  */
 export const users = pgTable("users", {
   id: uuid("id").primaryKey(),

@@ -4,7 +4,7 @@
  * PGlite is real Postgres compiled to WASM, running in-process. It needs no Docker
  * daemon and no service container, so schema tests run identically on a laptop and in CI.
  *
- * The migrations applied here are the same files that run against Supabase — the point is
+ * The migrations applied here are the same files that run against Neon — the point is
  * to test the constraints that actually ship, not a re-declaration of them.
  */
 

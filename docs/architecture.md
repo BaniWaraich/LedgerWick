@@ -266,8 +266,10 @@ PostgreSQL is therefore the V1 database.
 
 ### Which PostgreSQL
 
-V1 uses the **Supabase-hosted PostgreSQL instance**, alongside Supabase Storage. One vendor
-for both, and no second piece of infrastructure to operate.
+V1 uses **Neon**, in `aws-ap-southeast-1` (Singapore). Postgres and nothing else — no
+bundled authentication, no bundled storage. See
+`docs/decisions/0005-neon-authjs-blob.md`, including the Indian data residency this
+knowingly trades away.
 
 This has one consequence worth stating plainly: workspace isolation is enforced by the
 **application layer**, in the backend described in section 4.2 — not by Postgres row-level
@@ -319,7 +321,10 @@ The database does **not** store the actual binary contents of uploaded documents
 
 ## 6.1 Technology
 
-Supabase Storage.
+Vercel Blob, using private access.
+
+Documents are never publicly readable and are served through authorized application routes
+(section 19). See `docs/decisions/0005-neon-authjs-blob.md`.
 
 ## 6.2 Responsibilities
 
@@ -729,7 +734,7 @@ Backend records the request, returns immediately
         ↓
 Inngest workflow builds the file from current domain state
         ↓
-File written to Supabase Storage
+File written to Vercel Blob
         ↓
 User notified / download offered
 ```
@@ -740,8 +745,9 @@ time, and re-requesting produces a fresh one.
 Document references inside the export are links back into the application, never storage
 URLs — see section 19 and the workflow document for why.
 
-Generated exports are stored with the same privacy rules as source documents and are
-subject to expiry, since they are derived data and can always be regenerated.
+Generated exports are stored with the same privacy rules as source documents — private
+access, served through authorized routes — and are subject to expiry, since they are
+derived data and can always be regenerated.
 
 ---
 
@@ -823,12 +829,10 @@ Frontend observes updated state
 
 The frontend should reflect persisted processing state rather than maintaining an independent representation of workflow truth.
 
-V1 will use a simple mechanism such as:
+V1 uses **polling**.
 
-- polling, or
-- Supabase Realtime
-
-The specific mechanism is an implementation choice.
+It is sufficient for work measured in seconds to minutes, and it adds no infrastructure.
+A push mechanism can replace it later without changing the requirement below.
 
 The architectural requirement is:
 
@@ -1040,8 +1044,8 @@ The current V1 architecture uses:
 | ------------------------ | ------------------------------------------------- |
 | Web application          | Next.js                                           |
 | Backend                  | Next.js backend/API                               |
-| Database                 | PostgreSQL                                        |
-| File storage             | Supabase Storage                                  |
+| Database | PostgreSQL on Neon (ap-southeast-1) |
+| File storage | Vercel Blob (private) |
 | Background workflows     | Inngest                                           |
 | Automatic invoice source | Gmail API                                         |
 | Document processing      | Hybrid                                            |
@@ -1049,9 +1053,9 @@ The current V1 architecture uses:
 | OCR                      | Provider selected through evaluation              |
 | LLM                      | Provider/model selected through evaluation        |
 | Reconciliation           | Deterministic candidate generation + AI reasoning |
-| Authentication           | Supabase Auth                                     |
-| Excel export             | Background workflow (Inngest) → Supabase Storage  |
-| Processing updates       | Polling or Supabase Realtime                      |
+| Authentication | Auth.js, Google first |
+| Excel export | Background workflow (Inngest) → Vercel Blob |
+| Processing updates | Polling |
 
 The architecture is locked at the category level even where the exact provider/model remains subject to evaluation.
 
@@ -1167,7 +1171,7 @@ The system can be understood as five layers:
 
              Original Documents
                     ↓
-             Supabase Storage
+               Vercel Blob
 ```
 
 The most important mental model is:

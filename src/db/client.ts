@@ -22,7 +22,7 @@ function createDb() {
     throw new Error("DATABASE_URL is not set. Run `vercel env pull .env.local --yes`.");
   }
   // prepare: false is required behind a transaction-mode connection pooler, which is how
-  // Supabase serves pooled connections.
+  // Neon serves its pooled endpoint.
   const client = postgres(url, { prepare: false });
   return drizzle(client, { schema });
 }

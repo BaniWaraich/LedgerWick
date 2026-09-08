@@ -67,6 +67,10 @@ a matching convenience.
 
 ### Supabase Postgres, application-layer isolation
 
+**Superseded in part by 0005.** The hosting and authentication choices below were not the
+result of a comparison and have been replaced by Neon and Auth.js. The isolation decision
+stands, and is the reason that replacement was cheap.
+
 The database is the Supabase-hosted Postgres instance, and workspace isolation is enforced
 in the application layer rather than by row-level security, because the frontend has no
 direct database access. Authentication is Supabase Auth.

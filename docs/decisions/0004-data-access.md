@@ -78,11 +78,14 @@ Two suites, both required by `docs/definition-of-done.md`:
 
 ## Consequences
 
-* Supabase Postgres in ap-south-1, provisioned on the user's own Supabase account, so
-  `DATABASE_URL` must be set in Vercel and locally before anything connects.
+* **Superseded by 0005:** the database is Neon in `aws-ap-southeast-1`, not Supabase in
+  ap-south-1. `DATABASE_URL` must still be set in Vercel and locally before anything
+  connects; nothing else in this decision changes, which was the point of keeping the data
+  layer provider-neutral.
 * Statement Coverage is derived from `bank_statements.period_start/period_end` rather than
   stored, so there is no second copy to fall out of sync.
-* `users` mirrors the Supabase Auth user id rather than referencing `auth.users`, so the
-  schema stands alone and tests need no auth schema.
+* `users` is a standalone table rather than a reference to any provider's identity table,
+  so the schema stands alone and tests need no auth schema. Under 0005 it becomes the
+  Auth.js user table.
 * tsconfig `target` moved to ES2022 for bigint literals — well inside Next 16's browser
   floor.
