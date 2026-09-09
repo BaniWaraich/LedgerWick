@@ -27,6 +27,7 @@ follows them, not the other way round.
 | `docs/domain-model.md`       | Touching domain entities or invariants.                |
 | `docs/architecture.md`       | Touching boundaries, storage, workflows, or AI usage.  |
 | `docs/workflows/*.md`        | Implementing that workflow.                            |
+| `docs/phases/*.md`           | Scoping a phase, or deciding what to build next.       |
 | `docs/definition-of-done.md` | Before claiming a change is finished.                  |
 | `docs/testing-strategy.md`   | Writing tests, fixtures, or evals.                     |
 | `docs/decisions/`            | Making or revisiting a significant technical decision. |
