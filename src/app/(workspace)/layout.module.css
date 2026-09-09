@@ -1,0 +1,141 @@
+/* The authenticated shell. Follows wireframes/home_workspace: a fixed sidebar carrying
+   identity and navigation, and a content column offset by it. */
+
+.shell {
+  display: flex;
+  min-height: 100vh;
+  background: var(--color-background);
+  color: var(--color-on-background);
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-stack-md);
+  width: 100%;
+  padding: var(--space-stack-md) var(--space-margin-mobile);
+  background: var(--color-surface-container-low);
+  border-bottom: 1px solid var(--color-outline-variant);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.brandMark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--radius-lg);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  flex-shrink: 0;
+}
+
+.brandText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.brandName {
+  font-family: var(--font-headline);
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+/* The active workspace. The one piece of state the shell always shows. */
+.workspaceName {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--color-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.navLink {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-lg);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 700;
+  color: var(--color-on-secondary-container);
+  background: var(--color-secondary-container);
+}
+
+.footer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: auto;
+}
+
+.footerAction {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.5rem 1rem;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: none;
+  color: var(--color-secondary);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+
+.footerAction:hover {
+  background: var(--color-surface-container-high);
+  color: var(--color-on-surface-variant);
+}
+
+.content {
+  flex: 1;
+  width: 100%;
+  max-width: var(--space-container-max);
+  margin: 0 auto;
+  padding: var(--space-margin-mobile);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-stack-lg);
+}
+
+/* From the wireframe's md breakpoint: the bar becomes a fixed 16rem rail. */
+@media (min-width: 768px) {
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 40;
+    width: 16rem;
+    height: 100%;
+    padding: var(--space-stack-lg) 1rem;
+    border-right: 1px solid var(--color-outline-variant);
+    border-bottom: 0;
+  }
+
+  .content {
+    margin-left: 16rem;
+    padding: var(--space-margin-desktop);
+  }
+}

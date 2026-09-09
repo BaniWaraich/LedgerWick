@@ -1,0 +1,87 @@
+/* Follows wireframes/log_in: a centred card on the plain background. The email, password
+   and "forgot password" fields in that wireframe are not built -- Google is the only way
+   in (docs/decisions/0006-authentication.md), so the card carries what survives that
+   decision. */
+
+.page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: var(--space-margin-mobile);
+  background: var(--color-background);
+}
+
+.panel {
+  width: 100%;
+  max-width: 440px;
+}
+
+.intro {
+  text-align: center;
+  margin-bottom: var(--space-stack-lg);
+}
+
+.brand {
+  margin: 0 0 var(--space-unit);
+  font-family: var(--font-headline);
+  font-size: 32px;
+  line-height: 40px;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+.subtitle {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--color-secondary);
+}
+
+.card {
+  padding: var(--space-stack-lg);
+  background: var(--color-surface-container-lowest);
+  border: 1px solid var(--color-surface-variant);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 5%);
+}
+
+.googleButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  height: 40px;
+  padding: 0 0.75rem;
+  background: var(--color-surface-container-lowest);
+  border: 1px solid var(--color-secondary);
+  border-radius: var(--radius-default);
+  color: var(--color-secondary);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 150ms ease,
+    color 150ms ease;
+}
+
+.googleButton:hover {
+  background: var(--color-surface-container-low);
+  color: var(--color-on-surface-variant);
+}
+
+.googleMark {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+}
+
+.note {
+  margin: var(--space-stack-md) 0 0;
+  text-align: center;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--color-secondary);
+}

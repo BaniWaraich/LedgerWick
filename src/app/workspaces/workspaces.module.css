@@ -1,0 +1,150 @@
+/* The workspace picker and the create form.
+   Outside the authenticated shell on purpose: both are reachable when there is no active
+   workspace, which is exactly the state that shell refuses to render in. Shares the
+   centred-card language of wireframes/log_in. */
+
+.page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: var(--space-margin-mobile);
+  background: var(--color-background);
+}
+
+.panel {
+  width: 100%;
+  max-width: 440px;
+}
+
+.intro {
+  text-align: center;
+  margin-bottom: var(--space-stack-lg);
+}
+
+.title {
+  margin: 0 0 var(--space-unit);
+  font-family: var(--font-headline);
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.subtitle {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--color-secondary);
+}
+
+.card {
+  padding: var(--space-stack-lg);
+  background: var(--color-surface-container-lowest);
+  border: 1px solid var(--color-surface-variant);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 5%);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0 0 var(--space-stack-md);
+  padding: 0;
+  list-style: none;
+}
+
+.workspaceButton {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: var(--color-surface-container-lowest);
+  border: 1px solid var(--color-outline-variant);
+  border-radius: var(--radius-default);
+  color: var(--color-on-surface);
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 150ms ease;
+}
+
+.workspaceButton:hover {
+  border-color: var(--color-primary);
+}
+
+.label {
+  display: block;
+  margin-bottom: var(--space-unit);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  color: var(--color-on-surface-variant);
+}
+
+.input {
+  width: 100%;
+  height: 40px;
+  padding: 0 0.75rem;
+  background: var(--color-surface-container-lowest);
+  border: 1px solid var(--color-outline-variant);
+  border-radius: var(--radius-default);
+  color: var(--color-on-surface);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.primaryButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 40px;
+  margin-top: var(--space-stack-md);
+  background: var(--color-primary);
+  border: 0;
+  border-radius: var(--radius-default);
+  color: var(--color-on-primary);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.primaryButton:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.secondaryLink {
+  display: block;
+  margin-top: var(--space-stack-md);
+  text-align: center;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.empty {
+  margin: 0 0 var(--space-stack-md);
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--color-secondary);
+}
+
+.error {
+  margin: var(--space-stack-sm) 0 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--color-error);
+}
