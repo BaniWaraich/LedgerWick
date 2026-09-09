@@ -46,6 +46,11 @@ import {
  *
  * A new workspace-scoped table must be added here, which is deliberate friction: the
  * compiler then refuses to let it be read through this module until it is listed.
+ *
+ * `users` and the Auth.js tables — `accounts`, `sessions`, `verificationTokens` — are
+ * deliberately absent and must stay that way (docs/decisions/0006-authentication.md).
+ * They belong to a user, not to a workspace, and carry no `workspaceId` to filter on.
+ * `tests/db/auth-tables.test.ts` asserts the exclusion.
  */
 export const workspaceScopedTables = [
   bankAccounts,

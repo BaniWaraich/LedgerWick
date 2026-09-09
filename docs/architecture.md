@@ -1084,7 +1084,10 @@ This does not mean one grant. `gmail.readonly` is a **Restricted** scope, and it
 requested **incrementally** — at the moment the user connects a mailbox, never at sign-up.
 Sign-up asks for profile scopes only.
 
-`users.id` mirrors the Google `sub` claim, which is the shape `0004` already anticipated.
+The Google `sub` claim is held in `accounts.provider_account_id`; `users.id` is generated
+by the Auth.js adapter, which owns the `users` table. `0004`'s requirement — that the
+schema stand alone, with no reference to a provider-owned table — is met either way. See
+the amended consequence in `docs/decisions/0006-authentication.md`.
 
 ---
 

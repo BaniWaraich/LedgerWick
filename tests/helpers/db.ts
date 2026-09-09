@@ -40,9 +40,14 @@ let seq = 0;
 /** A user and a workspace, ready to use. */
 export async function seedWorkspace(db: Database, name = "Test Business") {
   seq += 1;
+  // Deliberately not a UUID. `users.id` is whatever the auth adapter generates, and a
+  // test that only ever seeds UUIDs would not notice the column narrowing back.
   const [user] = await db
     .insert(schema.users)
-    .values({ id: crypto.randomUUID(), email: `owner${seq}@example.com` })
+    .values({
+      id: `user_${seq}_${crypto.randomUUID().slice(0, 8)}`,
+      email: `owner${seq}@example.com`,
+    })
     .returning();
 
   const [workspace] = await db
