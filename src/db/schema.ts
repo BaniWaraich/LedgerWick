@@ -91,7 +91,8 @@ export const directionEnum = pgEnum("direction", ["DEBIT", "CREDIT"]);
 /* ------------------------------------------------------------------ identity */
 
 /**
- * Mirrors the authenticated user. `id` is the Supabase Auth user id.
+ * Mirrors the authenticated user. `id` is the external auth provider's user id; the
+ * provider itself is an open decision (docs/architecture.md §20).
  *
  * Kept as its own table rather than referencing `auth.users` directly so that the schema
  * stands alone — tests run against a bare Postgres with no auth schema present.

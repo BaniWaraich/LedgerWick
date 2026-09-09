@@ -266,12 +266,16 @@ PostgreSQL is therefore the V1 database.
 
 ### Which PostgreSQL
 
-V1 uses the **Supabase-hosted PostgreSQL instance**, alongside Supabase Storage. One vendor
-for both, and no second piece of infrastructure to operate.
+V1 uses **Neon** — serverless Postgres, scale-to-zero, with a connection pooler in front
+of it. See `docs/decisions/0005-neon-postgres.md`.
 
-This has one consequence worth stating plainly: workspace isolation is enforced by the
-**application layer**, in the backend described in section 4.2 — not by Postgres row-level
-security. Every query is scoped to a workspace by application code, and the backend is the
+Neon supplies the database and nothing else. File storage (§6) and authentication (§20)
+are therefore separate choices rather than something the database vendor happens to
+include, and both are open at the time of writing.
+
+Workspace isolation is enforced by the **application layer** either way. This has one
+consequence worth stating plainly: workspace isolation is enforced by the backend described in section 4.2 — not by Postgres
+row-level security. Every query is scoped to a workspace by application code, and the backend is the
 only component holding database credentials. The frontend never talks to the database
 directly, so there is no client-side query surface for RLS to defend.
 
@@ -284,7 +288,10 @@ tests. It also means a single missing workspace filter is a data leak, so:
 - isolation is covered by tests that attempt cross-workspace access and expect failure.
 
 Adding RLS later as a second line of defence remains possible and does not require
-rearchitecting.
+rearchitecting — though note that RLS is most useful when the database can identify the
+end user from a request-scoped JWT, and Neon issues no such token on its own. The backend
+is the only holder of credentials, which is what makes application-layer isolation
+sufficient here.
 
 ## 5.3 Database Responsibilities
 
@@ -319,7 +326,20 @@ The database does **not** store the actual binary contents of uploaded documents
 
 ## 6.1 Technology
 
-Supabase Storage.
+**Vercel Blob**, in private mode. See `docs/decisions/0007-file-storage.md`.
+
+Storage was Supabase Storage, chosen because Supabase supplied the database; the database
+is now Neon (`docs/decisions/0005-neon-postgres.md`), which offers no object storage.
+
+What the choice must satisfy, fixed by §2.1 and `docs/definition-of-done.md`:
+
+- objects are **private**; there is no public URL for a document,
+- document bytes reach the user only through an authorized application route,
+- uploads can be written from a background workflow, not only from a request,
+- an uploaded file is never deleted by automated processing.
+
+The stored reference is a key, not a URL, and storage access sits behind one module so the
+provider can be replaced without touching the workflows.
 
 ## 6.2 Responsibilities
 
@@ -729,7 +749,7 @@ Backend records the request, returns immediately
         ↓
 Inngest workflow builds the file from current domain state
         ↓
-File written to Supabase Storage
+File written to object storage
         ↓
 User notified / download offered
 ```
@@ -823,12 +843,11 @@ Frontend observes updated state
 
 The frontend should reflect persisted processing state rather than maintaining an independent representation of workflow truth.
 
-V1 will use a simple mechanism such as:
+V1 polls.
 
-- polling, or
-- Supabase Realtime
-
-The specific mechanism is an implementation choice.
+The specific mechanism is an implementation choice, and polling is the one that requires
+no additional infrastructure. A push channel may replace it later without affecting the
+architectural requirement below.
 
 The architectural requirement is:
 
@@ -1040,8 +1059,8 @@ The current V1 architecture uses:
 | ------------------------ | ------------------------------------------------- |
 | Web application          | Next.js                                           |
 | Backend                  | Next.js backend/API                               |
-| Database                 | PostgreSQL                                        |
-| File storage             | Supabase Storage                                  |
+| Database                 | PostgreSQL (Neon)                                 |
+| File storage             | Vercel Blob (private)                             |
 | Background workflows     | Inngest                                           |
 | Automatic invoice source | Gmail API                                         |
 | Document processing      | Hybrid                                            |
@@ -1049,11 +1068,23 @@ The current V1 architecture uses:
 | OCR                      | Provider selected through evaluation              |
 | LLM                      | Provider/model selected through evaluation        |
 | Reconciliation           | Deterministic candidate generation + AI reasoning |
-| Authentication           | Supabase Auth                                     |
-| Excel export             | Background workflow (Inngest) → Supabase Storage  |
-| Processing updates       | Polling or Supabase Realtime                      |
+| Authentication           | Auth.js (NextAuth) + Google                       |
+| Excel export             | Background workflow (Inngest) → object storage    |
+| Processing updates       | Polling                                           |
 
 The architecture is locked at the category level even where the exact provider/model remains subject to evaluation.
+
+**Authentication is Auth.js (NextAuth) with the Google provider** — see
+`docs/decisions/0006-authentication.md`.
+
+Sign-in and Gmail connection share one identity and one consent surface, because
+`docs/workflows/connect-gmail.md` requires Google OAuth regardless of how sign-in works.
+
+This does not mean one grant. `gmail.readonly` is a **Restricted** scope, and it is
+requested **incrementally** — at the moment the user connects a mailbox, never at sign-up.
+Sign-up asks for profile scopes only.
+
+`users.id` mirrors the Google `sub` claim, which is the shape `0004` already anticipated.
 
 ---
 
@@ -1167,7 +1198,7 @@ The system can be understood as five layers:
 
              Original Documents
                     ↓
-             Supabase Storage
+             Object Storage (§6)
 ```
 
 The most important mental model is:

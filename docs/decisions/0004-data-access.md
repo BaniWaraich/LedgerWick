@@ -1,6 +1,6 @@
 # 0004 — Drizzle, integer money, and a scope object for isolation
 
-Status: Accepted · 2026-09-07
+Status: Accepted · 2026-09-07 · Database vendor superseded by `0005`
 
 ## Context
 
@@ -66,7 +66,7 @@ the enforcement.
 ## Testing
 
 Schema tests run on PGlite — real Postgres compiled to WASM, in-process. No Docker daemon,
-no CI service container, same migrations that run against Supabase.
+no CI service container, same migrations that run against the production database.
 
 Two suites, both required by `docs/definition-of-done.md`:
 
@@ -78,11 +78,14 @@ Two suites, both required by `docs/definition-of-done.md`:
 
 ## Consequences
 
-* Supabase Postgres in ap-south-1, provisioned on the user's own Supabase account, so
-  `DATABASE_URL` must be set in Vercel and locally before anything connects.
+* Postgres must be provisioned and `DATABASE_URL` set in Vercel and locally before
+  anything connects. (This was Supabase in ap-south-1 when written; it is now Neon —
+  see `0005-neon-postgres.md`. The data access layer is unaffected either way.)
 * Statement Coverage is derived from `bank_statements.period_start/period_end` rather than
   stored, so there is no second copy to fall out of sync.
-* `users` mirrors the Supabase Auth user id rather than referencing `auth.users`, so the
-  schema stands alone and tests need no auth schema.
+* `users` mirrors the external auth provider's user id rather than referencing a
+  provider-owned table, so the schema stands alone and tests need no auth schema. Written
+  with Supabase Auth in mind, this shape is what now lets the auth provider be chosen
+  independently of the database.
 * tsconfig `target` moved to ES2022 for bigint literals — well inside Next 16's browser
   floor.

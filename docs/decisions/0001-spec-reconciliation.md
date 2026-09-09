@@ -1,6 +1,6 @@
 # 0001 — Spec reconciliation: entities, states, and vocabulary
 
-Status: Accepted · 2026-09-07
+Status: Accepted · 2026-09-07 · Infrastructure choices superseded in part by `0005`
 
 ## Context
 
@@ -66,6 +66,10 @@ does not say. The lookup never crosses a workspace boundary — this is a securi
 a matching convenience.
 
 ### Supabase Postgres, application-layer isolation
+
+> **Superseded in part by `0005-neon-postgres.md`.** The database is now Neon, and the
+> Supabase Auth line below no longer holds. The application-layer isolation decision this
+> section records is unchanged. Left as written, as a record of what was decided.
 
 The database is the Supabase-hosted Postgres instance, and workspace isolation is enforced
 in the application layer rather than by row-level security, because the frontend has no

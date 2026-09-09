@@ -369,8 +369,9 @@ The user can then resolve the ambiguity through the Invoice Match Review workflo
 
 Retrieved supporting documents should be stored securely outside Gmail so that later workflows can use them without repeatedly retrieving them from Gmail.
 
-Documents are stored in **Supabase Storage**, as fixed by `docs/architecture.md §6`. This
-workflow does not choose the storage system.
+Documents are stored in **Vercel Blob**, private, as fixed by `docs/architecture.md §6`.
+This workflow does not choose the storage system; it requires only a stable reference to a
+private object.
 
 The system should retain a stable reference to each stored document.
 
