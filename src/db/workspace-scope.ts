@@ -197,3 +197,35 @@ export async function openWorkspace(
 export async function listWorkspaces(db: Database, userId: string) {
   return db.select().from(workspaces).where(eq(workspaces.ownerId, userId));
 }
+
+/** Thrown when a workspace is asked for without a usable name. */
+export class InvalidWorkspaceNameError extends Error {
+  constructor() {
+    super("A workspace needs a name");
+    this.name = "InvalidWorkspaceNameError";
+  }
+}
+
+/**
+ * Create a workspace owned by `ownerId`.
+ *
+ * Unscoped, like `listWorkspaces`, and for the same reason: a workspace *is* the
+ * boundary, so there is no scope to be inside when one is made. What keeps this safe is
+ * that `ownerId` is not a caller's choice — the only caller derives it from the session,
+ * and the static guard in `tests/auth/scope-is-unavoidable.test.ts` stops application
+ * code reaching the unscoped client to call it with anything else.
+ *
+ * In V1 the owner is the only member: `docs/domain-model.md §11` — "A Workspace has
+ * exactly one user in V1. There are no members, roles, or invitations."
+ */
+export async function createWorkspace(db: Database, ownerId: string, name: string) {
+  const trimmed = name.trim();
+
+  // Rejected here rather than in the form handler so it cannot be bypassed by a caller
+  // that forgets, which is the same reasoning as the workspace filter itself.
+  if (trimmed.length === 0) throw new InvalidWorkspaceNameError();
+
+  const [workspace] = await db.insert(workspaces).values({ ownerId, name: trimmed }).returning();
+
+  return workspace;
+}

@@ -15,9 +15,15 @@ import { redirect } from "next/navigation";
 import { cache } from "react";
 
 import { getDb } from "../db/client";
-import { WorkspaceAccessError, type WorkspaceScope } from "../db/workspace-scope";
+import {
+  createWorkspace,
+  listWorkspaces,
+  openWorkspace,
+  WorkspaceAccessError,
+  type WorkspaceScope,
+} from "../db/workspace-scope";
 import { requireUser } from "./session";
-import { resolveWorkspaceScope } from "./workspace-resolution";
+import { resolveWorkspaceScope, type WorkspaceChoice } from "./workspace-resolution";
 
 /**
  * Holds the active workspace id.
@@ -26,7 +32,7 @@ import { resolveWorkspaceScope } from "./workspace-resolution";
  * every route — not a credential. `openWorkspace` re-checks it on every single request,
  * so a forged or stale value grants nothing; it only produces a redirect.
  */
-export const ACTIVE_WORKSPACE_COOKIE = "lw_active_workspace";
+const ACTIVE_WORKSPACE_COOKIE = "lw_active_workspace";
 
 /** Where the user goes when they have no workspace, or must pick one. */
 const CREATE_WORKSPACE_PATH = "/workspaces/new";
@@ -63,3 +69,59 @@ export const requireScope = cache(async (workspaceId?: string): Promise<Workspac
 
   redirect(resolution.kind === "no-workspaces" ? CREATE_WORKSPACE_PATH : CHOOSE_WORKSPACE_PATH);
 });
+
+/**
+ * Cookie options.
+ *
+ * `httpOnly` because no client code has any reason to read it — the active workspace is
+ * resolved on the server. `lax` so following a link into the app keeps the selection.
+ */
+function activeWorkspaceCookieOptions() {
+  return {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    // A month. Long enough not to nag, short enough that an abandoned device forgets.
+    maxAge: 60 * 60 * 24 * 30,
+  } as const;
+}
+
+/** The workspaces the signed-in user may open. Grants nothing on its own. */
+export async function listAvailableWorkspaces(): Promise<WorkspaceChoice[]> {
+  const { userId } = await requireUser();
+
+  const rows = await listWorkspaces(getDb(), userId);
+  return rows.map((w) => ({ id: w.id, name: w.name }));
+}
+
+/**
+ * Make `workspaceId` the active one.
+ *
+ * The authorization check runs first and the cookie is only written after it returns:
+ * `openWorkspace` throws for a workspace that is not the user's, so a failed selection
+ * cannot leave a cookie naming someone else's workspace behind.
+ */
+export async function activateWorkspace(workspaceId: string): Promise<void> {
+  const { userId } = await requireUser();
+
+  await openWorkspace(getDb(), userId, workspaceId);
+
+  (await cookies()).set(ACTIVE_WORKSPACE_COOKIE, workspaceId, activeWorkspaceCookieOptions());
+}
+
+/**
+ * Create a workspace for the signed-in user and make it active.
+ *
+ * The owner comes from the session, never from the form, so a crafted request cannot
+ * create a workspace belonging to somebody else.
+ */
+export async function createWorkspaceForUser(name: string): Promise<{ id: string }> {
+  const { userId } = await requireUser();
+
+  const workspace = await createWorkspace(getDb(), userId, name);
+
+  (await cookies()).set(ACTIVE_WORKSPACE_COOKIE, workspace.id, activeWorkspaceCookieOptions());
+
+  return { id: workspace.id };
+}

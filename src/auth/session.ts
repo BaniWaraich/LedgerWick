@@ -36,11 +36,3 @@ export const requireUser = cache(async (): Promise<AuthenticatedUser> => {
 
   return { userId, email: session.user?.email ?? null };
 });
-
-/** The session, without forcing a redirect. For deciding what to render, not for access. */
-export const currentUser = cache(async (): Promise<AuthenticatedUser | null> => {
-  const session = await auth();
-  const userId = session?.user?.id;
-
-  return userId ? { userId, email: session.user?.email ?? null } : null;
-});

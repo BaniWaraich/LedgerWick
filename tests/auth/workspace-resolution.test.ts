@@ -9,7 +9,7 @@
  * should not be able to use and asserts it buys nothing.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 
 import { createTestDb, seedBankAccount, seedWorkspace, type TestDb } from "../helpers/db";
@@ -19,11 +19,13 @@ import { resolveWorkspaceScope } from "../../src/auth/workspace-resolution";
 
 let h: TestDb;
 
-beforeEach(async () => {
+// One database for the file. Every seed helper generates a fresh user, so the tests do
+// not collide, and booting PGlite once per test is by far the slowest thing in the suite.
+beforeAll(async () => {
   h = await createTestDb();
 });
 
-afterEach(async () => {
+afterAll(async () => {
   await h.close();
 });
 
@@ -90,7 +92,7 @@ describe("with no workspace id from the client", () => {
   it("reports that a new user has none", async () => {
     const [user] = await h.db
       .insert(users)
-      .values({ id: "new_user", email: "new@example.com" })
+      .values({ id: "user_with_no_workspaces", email: "none@example.com" })
       .returning();
 
     expect(await resolveWorkspaceScope(h.db, user.id)).toEqual({ kind: "no-workspaces" });
