@@ -118,6 +118,19 @@ account under an unverified app — but no external user can use retrieval until
 **Treat verification as a parallel track started on day one, not as something the Gmail feature
 discovers.** It does not change the Phase 1 boundary; it changes when Phase 1 can meet a stranger.
 
+**Corrected once the track was actually started.** The track is two halves, and only one of them
+is parallel. The consent screen, the verified domain, and the published privacy policy and terms
+can all be done at A, and were. The **demo video cannot be**: Google requires it to show the real
+production app demonstrating *how the data from each requested scope is used*, which means filming
+a mailbox search that produces a real invoice match. That is J and K — the tenth and eleventh
+features — plus enough of C, D and E for a transaction to exist and be known to need a document.
+
+So the CASA clock does not start at A. **It starts when K ships**, and the weeks of lead time run
+from there, with nothing available to run in parallel against them. The gap between "Phase 1 is
+code-complete" and "Phase 1 can meet a stranger" is therefore the full assessment turnaround,
+and it sits at the end of the phase rather than alongside it. Plan the end of Phase 1 knowing
+that.
+
 ---
 
 ## 2. The core product loop
@@ -457,8 +470,9 @@ and disconnect.
 
 **Why Phase 1.** In scope, and retrieval cannot exist without it.
 
-**Dependencies.** A. **External dependency: Google verification / CASA — start this track at
-feature A, not here.**
+**Dependencies.** A. **External dependency: Google verification / CASA — the paperwork half
+starts at feature A, not here; the demo video and the submission cannot start until K exists
+(§1).**
 
 **Complete when.** The Gmail scope is requested at connect time and never at sign-up. Tokens are
 encrypted at rest, never logged, never returned to the frontend, never sent to a model. Several
@@ -525,10 +539,13 @@ A → B → C → D → E → F → G → H → I → J → K → L
 | **J → K**  | Retrieval needs credentials, connection health, and the `BLOCKED` path. All are J's                                                                                                                    |
 | **K → L**  | Export renders the complete reconciliation; running it before retrieval means exporting a state the product does not yet reach                                                                         |
 
-**One thing runs off this line.** Google Cloud project setup, OAuth consent configuration, and the
-verification/CASA submission are **started at A**, in parallel, because they are calendar time we
-cannot compress later. The `connect-gmail.md §5` OPEN DECISION — Gmail API versus forwarding — must
-be settled before J is defined, and it is a product decision, not an implementation detail.
+**One thing runs off this line, and only partly.** Google Cloud project setup, OAuth consent
+configuration, the verified domain, and the published privacy policy and terms are **started at
+A**, in parallel, because they are calendar time we cannot compress later. The **submission
+itself cannot be**: it requires a demo video showing the scope's data actually being used, so it
+is gated on K rather than on lead time, and the CASA clock starts there (§1). The
+`connect-gmail.md §5` OPEN DECISION — Gmail API versus forwarding — must be settled before J is
+defined, and it is a product decision, not an implementation detail.
 
 ---
 
@@ -603,8 +620,9 @@ Resolution · I. Missing Invoice Report · J. Gmail Connection · K. Gmail Retri
 
 ### Feature sequence
 
-`A → B → C → D → E → F → G → H → I → J → K → L`, with Google verification / CASA started as a
-parallel track at A and the `connect-gmail.md §5` OPEN DECISION settled before J is defined.
+`A → B → C → D → E → F → G → H → I → J → K → L`, with the Google verification paperwork started
+as a parallel track at A, the submission and CASA clock starting at K because the demo video
+depends on it, and the `connect-gmail.md §5` OPEN DECISION settled before J is defined.
 
 ### Development strategy
 
