@@ -15,8 +15,13 @@
  * (ADR 0007), so the store must be callable from background work.
  */
 
-/** What the store knows about an object once it exists. */
-export interface StoredObject {
+/**
+ * What the caller learns from storing an object: the reference to persist.
+ *
+ * Deliberately narrower than `StoredObject`. The provider's write does not report a size
+ * back, and the store will not invent one — a caller that needs it asks `head`.
+ */
+export interface StoredReference {
   /**
    * The storage reference, as persisted in `storage_ref`.
    *
@@ -25,6 +30,10 @@ export interface StoredObject {
    */
   key: string;
   contentType: string;
+}
+
+/** What the store knows about an object that already exists. */
+export interface StoredObject extends StoredReference {
   size: number;
 }
 
@@ -49,9 +58,9 @@ export interface DocumentStore {
    * Store bytes and return the reference to persist.
    *
    * `requestedKey` is a request, not a promise. The implementation may return a different
-   * key, so callers persist `StoredObject.key` and never the key they passed in.
+   * key, so callers persist `StoredReference.key` and never the key they passed in.
    */
-  put(requestedKey: string, body: DocumentBody, contentType: string): Promise<StoredObject>;
+  put(requestedKey: string, body: DocumentBody, contentType: string): Promise<StoredReference>;
 
   /** The object's bytes, or null if there is no such object. */
   get(key: string): Promise<StoredObjectBody | null>;

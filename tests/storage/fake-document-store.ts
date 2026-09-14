@@ -3,6 +3,7 @@ import type {
   DocumentStore,
   StoredObject,
   StoredObjectBody,
+  StoredReference,
 } from "../../src/storage/document-store";
 
 /**
@@ -27,14 +28,18 @@ export class FakeDocumentStore implements DocumentStore {
     return `${requestedKey}-${existing.toString(36).padStart(4, "0")}`;
   }
 
-  async put(requestedKey: string, body: DocumentBody, contentType: string): Promise<StoredObject> {
+  async put(
+    requestedKey: string,
+    body: DocumentBody,
+    contentType: string,
+  ): Promise<StoredReference> {
     const bytes = Buffer.isBuffer(body)
       ? body
       : Buffer.from(await new Response(body).arrayBuffer());
     const key = FakeDocumentStore.suffix(requestedKey, this.objects.size);
 
     this.objects.set(key, { bytes, contentType });
-    return { key, contentType, size: bytes.byteLength };
+    return { key, contentType };
   }
 
   async get(key: string): Promise<StoredObjectBody | null> {
