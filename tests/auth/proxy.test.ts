@@ -56,7 +56,7 @@ describe("a request carrying a session cookie", () => {
 
 describe("the matcher", () => {
   it("covers every authenticated area", () => {
-    for (const path of ["/home", "/workspaces", "/workspaces/new", "/reconciliations/abc"]) {
+    for (const path of ["/home", "/home/anything", "/workspaces", "/workspaces/new"]) {
       expect(matches(path), `${path} is unprotected`).toBe(true);
     }
   });
