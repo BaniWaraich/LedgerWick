@@ -5,6 +5,7 @@ import type {
   StoredObjectBody,
   StoredReference,
 } from "../../src/storage/document-store";
+import type { DocumentKey } from "../../src/storage/keys";
 
 /**
  * A DocumentStore that keeps bytes in a Map.
@@ -29,7 +30,7 @@ export class FakeDocumentStore implements DocumentStore {
   }
 
   async put(
-    requestedKey: string,
+    requestedKey: DocumentKey,
     body: DocumentBody,
     contentType: string,
   ): Promise<StoredReference> {

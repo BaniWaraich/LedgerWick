@@ -15,6 +15,8 @@
  * (ADR 0007), so the store must be callable from background work.
  */
 
+import type { DocumentKey } from "./keys";
+
 /**
  * What the caller learns from storing an object: the reference to persist.
  *
@@ -57,10 +59,16 @@ export interface DocumentStore {
   /**
    * Store bytes and return the reference to persist.
    *
-   * `requestedKey` is a request, not a promise. The implementation may return a different
-   * key, so callers persist `StoredReference.key` and never the key they passed in.
+   * `requestedKey` is a `DocumentKey`, not a string, so the workspace prefix ADR 0007
+   * requires is enforced by the compiler rather than by the caller remembering it — the
+   * only way to obtain one is `documentKey()`. A writer that hand-rolls a path does not
+   * type-check.
+   *
+   * It is a request, not a promise: the implementation may return a different key (Blob
+   * appends a random suffix), so callers persist `StoredReference.key` and never the key
+   * they passed in.
    */
-  put(requestedKey: string, body: DocumentBody, contentType: string): Promise<StoredReference>;
+  put(requestedKey: DocumentKey, body: DocumentBody, contentType: string): Promise<StoredReference>;
 
   /** The object's bytes, or null if there is no such object. */
   get(key: string): Promise<StoredObjectBody | null>;

@@ -9,6 +9,19 @@
  * Pure functions over strings, so the traversal cases below are testable without a store.
  */
 
+/**
+ * A key that is known to be workspace-prefixed.
+ *
+ * The brand exists because the prefix is an isolation property, not a formatting one, and
+ * "the caller remembers to build the key correctly" is the same shape of promise as "the
+ * caller remembers the workspace filter" — which `WorkspaceScope` already refuses to
+ * make. `DocumentStore.put` accepts only this type, so the compiler rejects a raw string,
+ * and `documentKey` below is the only function that produces one.
+ *
+ * `tests/storage/keys-are-unavoidable.test.ts` bans the cast that would forge one.
+ */
+export type DocumentKey = string & { readonly __documentKey: unique symbol };
+
 /** The two kinds of document this system stores, and the schema table each belongs to. */
 export type DocumentKind = "statements" | "documents";
 
@@ -44,8 +57,10 @@ export function documentKey(
   kind: DocumentKind,
   uniqueSegment: string,
   filename: string,
-): string {
-  return `workspaces/${workspaceId}/${kind}/${uniqueSegment}/${sanitizeFilename(filename)}`;
+): DocumentKey {
+  const key = `workspaces/${workspaceId}/${kind}/${uniqueSegment}/${sanitizeFilename(filename)}`;
+  // The one cast that mints a DocumentKey, in the one function that builds the prefix.
+  return key as DocumentKey;
 }
 
 /** The prefix every key for a workspace shares. */

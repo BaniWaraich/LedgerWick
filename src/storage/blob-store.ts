@@ -19,6 +19,7 @@ import type {
   StoredObjectBody,
   StoredReference,
 } from "./document-store";
+import type { DocumentKey } from "./keys";
 
 /**
  * Private, always.
@@ -38,7 +39,7 @@ const ACCESS = "private" as const;
  */
 class BlobDocumentStore implements DocumentStore {
   async put(
-    requestedKey: string,
+    requestedKey: DocumentKey,
     body: DocumentBody,
     contentType: string,
   ): Promise<StoredReference> {
