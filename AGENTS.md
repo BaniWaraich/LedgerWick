@@ -153,6 +153,38 @@ Before accepting a significant change:
 
 Never blindly accept generated code.
 
+### 11. Work that depends on the human goes to Linear
+
+Some work cannot be done by an agent: creating accounts, entering card details, granting
+access, approving a policy, signing something, verifying a domain, deciding a name. That
+work must never live only in a chat message — between sessions, chat is lost.
+
+**Whenever a task turns out to depend on the developer, create a Linear issue for it
+before continuing.** Team: `Bani Waraich`. The issue is the record; the chat message is
+only a pointer to it.
+
+Each issue must contain enough for the developer to act without re-reading the session:
+
+- **Title** — the action, in the imperative ("Verify ledgerwick.com in Resend").
+- **Why it is blocked on a human** — the specific reason an agent cannot do it (needs a
+  login, a payment method, a legal decision, a physical document).
+- **What it unblocks** — the code, spec section, or deploy that is waiting on it.
+- **Step-by-step instructions** — the exact path: which service, which page, which values
+  to enter, what the result should look like when it is done.
+- **Definition of done** — the observable end state, so completion is not a judgement call.
+
+**Set a priority on every such issue** so the order to tackle them in is explicit:
+
+- **Urgent (1)** — blocking work right now, or has a real deadline (expiry, outage, legal).
+- **High (2)** — blocks the current phase; the next piece of work stalls without it.
+- **Medium (3)** — needed soon, but something else can proceed meanwhile.
+- **Low (4)** — housekeeping; do it when there is slack.
+
+**Follow up at the start of each session.** Before picking up new work, list the open
+Linear issues assigned to the developer, ask which have been done, and close or update
+them accordingly. Do not silently work around a blocked task — if it is still open, say so
+and confirm what to do instead.
+
 <!-- BEGIN:nextjs-agent-rules -->
 
 # This is NOT the Next.js you know
