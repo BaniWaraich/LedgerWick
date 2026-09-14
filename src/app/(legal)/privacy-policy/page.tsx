@@ -18,7 +18,7 @@ export const metadata: Metadata = {
   title: "Privacy Policy · Ledgerwick",
   description:
     "How Ledgerwick collects, uses, stores and protects your data, including data accessed from Google accounts.",
-  alternates: { canonical: "https://ledgerwick.com/privacy-policy" },
+  alternates: { canonical: "https://www.ledgerwick.com/privacy-policy" },
 };
 
 const EFFECTIVE = "14 September 2026";

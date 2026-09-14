@@ -15,7 +15,7 @@ export const metadata: Metadata = {
   title: "Terms & Conditions · Ledgerwick",
   description:
     "The terms on which Ledgerwick is provided, including your responsibilities, our disclaimers, and the governing law.",
-  alternates: { canonical: "https://ledgerwick.com/terms-and-conditions" },
+  alternates: { canonical: "https://www.ledgerwick.com/terms-and-conditions" },
 };
 
 const EFFECTIVE = "14 September 2026";
