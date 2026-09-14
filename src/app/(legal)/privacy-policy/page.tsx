@@ -89,10 +89,10 @@ export default function PrivacyPolicyPage() {
       <section className={styles.section} id="who-we-are">
         <h2 className={styles.sectionTitle}>1. Who we are</h2>
         <p>
-          Ledgerwick is operated by <strong>Bani Waraich</strong>, a sole proprietor trading as
-          Ledgerwick, based in India. For the purposes of the Digital Personal Data Protection Act,
-          2023 we are the <strong>Data Fiduciary</strong> for the personal data described here;
-          under the GDPR we are the <strong>data controller</strong>.
+          Ledgerwick is operated by <strong>Bani Waraich</strong>, an individual in India, under the
+          trade name Ledgerwick. For the purposes of the Digital Personal Data Protection Act, 2023
+          we are the <strong>Data Fiduciary</strong> for the personal data described here; under the
+          GDPR we are the <strong>data controller</strong>.
         </p>
         <p>
           You can reach us about anything in this policy at{" "}
@@ -476,7 +476,7 @@ export default function PrivacyPolicyPage() {
       <section className={styles.section} id="contact">
         <h2 className={styles.sectionTitle}>14. Contact and grievances</h2>
         <p>
-          Bani Waraich, sole proprietor, trading as Ledgerwick.
+          Bani Waraich, an individual in India, operating under the trade name Ledgerwick.
           <br />
           Email: <a href="mailto:waraichbani@gmail.com">waraichbani@gmail.com</a>
         </p>

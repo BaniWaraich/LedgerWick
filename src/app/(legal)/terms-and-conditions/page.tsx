@@ -88,8 +88,8 @@ export default function TermsPage() {
       <section className={styles.section} id="who-we-are">
         <h2 className={styles.sectionTitle}>1. Who we are</h2>
         <p>
-          Ledgerwick is operated by <strong>Bani Waraich</strong>, a sole proprietor trading as
-          Ledgerwick, based in India (&ldquo;Ledgerwick&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;).
+          Ledgerwick is operated by <strong>Bani Waraich</strong>, an individual in India, under the
+          trade name Ledgerwick (&ldquo;Ledgerwick&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;).
           &ldquo;You&rdquo; means the person or business using the service.
         </p>
       </section>
@@ -302,7 +302,7 @@ export default function TermsPage() {
       <section className={styles.section} id="contact">
         <h2 className={styles.sectionTitle}>15. Contact</h2>
         <p>
-          Bani Waraich, sole proprietor, trading as Ledgerwick.
+          Bani Waraich, an individual in India, operating under the trade name Ledgerwick.
           <br />
           Email: <a href="mailto:waraichbani@gmail.com">waraichbani@gmail.com</a>
         </p>
