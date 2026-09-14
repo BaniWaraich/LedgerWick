@@ -68,4 +68,13 @@ describe("the matcher", () => {
       expect(matches(path), `${path} must stay reachable signed out`).toBe(false);
     }
   });
+
+  // Google's OAuth verification reviewers read these pages without an account, and the
+  // consent screen links to them. Putting either behind the session cookie fails the
+  // review rather than breaking a page, which is a slow and expensive way to find out.
+  it("leaves the legal pages public, because OAuth verification depends on it", () => {
+    for (const path of ["/privacy-policy", "/terms-and-conditions"]) {
+      expect(matches(path), `${path} must stay reachable signed out`).toBe(false);
+    }
+  });
 });

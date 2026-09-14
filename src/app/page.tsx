@@ -173,19 +173,19 @@ export default function LandingPage() {
         <div className={styles.footerInner}>
           <div className={styles.footerBrand}>
             <span className={styles.footerName}>Ledgerwick</span>
-            <span className={styles.footerYear}>© 2023</span>
+            <span className={styles.footerYear}>© {new Date().getFullYear()}</span>
           </div>
           <div className={styles.footerLinks}>
             <a className={styles.footerLink} href="#product">
               Product
             </a>
-            <a className={styles.footerLink} href="#privacy">
-              Privacy
-            </a>
-            <a className={styles.footerLink} href="#security">
-              Security
-            </a>
-            <a className={styles.footerLink} href="#privacy">
+            <Link className={styles.footerLink} href="/privacy-policy">
+              Privacy Policy
+            </Link>
+            <Link className={styles.footerLink} href="/terms-and-conditions">
+              Terms &amp; Conditions
+            </Link>
+            <a className={styles.footerLink} href="mailto:waraichbani@gmail.com">
               Contact
             </a>
           </div>

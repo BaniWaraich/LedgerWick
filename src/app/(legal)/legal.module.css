@@ -1,0 +1,248 @@
+/*
+ * Shared chrome for the public legal pages.
+ *
+ * These are read by two audiences with different needs: a Google verification reviewer
+ * scanning for specific disclosures, and a customer trying to answer one question. Both
+ * are served by a single measured column, real heading hierarchy, and no decoration that
+ * competes with the text.
+ */
+
+.page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-background);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-stack-md);
+  padding: var(--space-stack-md) var(--space-margin-mobile);
+  border-bottom: 1px solid var(--color-outline-variant);
+  background: var(--color-surface-container-lowest);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+.brandIcon {
+  font-size: 24px;
+}
+
+.brandName {
+  font-family: var(--font-headline);
+  font-size: 1.125rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.headerLink {
+  font-size: 0.875rem;
+  color: var(--color-on-surface-variant);
+  text-decoration: none;
+}
+
+.headerLink:hover {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+
+.main {
+  flex: 1;
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--space-stack-lg) var(--space-margin-mobile) 64px;
+}
+
+.title {
+  font-family: var(--font-headline);
+  font-size: 2rem;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  color: var(--color-on-background);
+  margin: 0 0 8px;
+}
+
+.meta {
+  font-size: 0.8125rem;
+  color: var(--color-on-surface-variant);
+  margin: 0 0 var(--space-stack-lg);
+}
+
+.lede {
+  font-size: 1.0625rem;
+  line-height: 1.65;
+  color: var(--color-on-surface);
+  margin: 0 0 var(--space-stack-lg);
+}
+
+/* The one visually distinct block: disclosures a reviewer is specifically looking for. */
+.callout {
+  border-left: 3px solid var(--color-primary);
+  background: var(--color-surface-container-low);
+  padding: var(--space-stack-md);
+  border-radius: var(--radius-lg);
+  margin: var(--space-stack-lg) 0;
+}
+
+.callout p:first-child {
+  margin-top: 0;
+}
+
+.callout p:last-child {
+  margin-bottom: 0;
+}
+
+.section {
+  margin-top: var(--space-stack-lg);
+  scroll-margin-top: var(--space-stack-md);
+}
+
+.sectionTitle {
+  font-family: var(--font-headline);
+  font-size: 1.25rem;
+  line-height: 1.3;
+  color: var(--color-on-background);
+  margin: 0 0 var(--space-stack-sm);
+}
+
+.subTitle {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--color-on-background);
+  margin: var(--space-stack-md) 0 4px;
+}
+
+.main p,
+.main li {
+  font-size: 0.9375rem;
+  line-height: 1.7;
+  color: var(--color-on-surface);
+}
+
+.main p {
+  margin: 0 0 var(--space-stack-md);
+}
+
+.main ul {
+  margin: 0 0 var(--space-stack-md);
+  padding-left: 20px;
+}
+
+.main li {
+  margin-bottom: 6px;
+}
+
+.main a {
+  color: var(--color-primary);
+}
+
+.main strong {
+  font-weight: 600;
+}
+
+.tableWrap {
+  overflow-x: auto;
+  margin: 0 0 var(--space-stack-md);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--color-outline-variant);
+}
+
+.table th {
+  font-weight: 600;
+  color: var(--color-on-background);
+  background: var(--color-surface-container-low);
+  white-space: nowrap;
+}
+
+.toc {
+  border: 1px solid var(--color-outline-variant);
+  border-radius: var(--radius-lg);
+  padding: var(--space-stack-md);
+  margin: 0 0 var(--space-stack-lg);
+}
+
+.tocTitle {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-on-surface-variant);
+  margin: 0 0 8px;
+}
+
+.tocList {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.tocList li {
+  margin-bottom: 2px;
+  font-size: 0.875rem;
+}
+
+.footer {
+  border-top: 1px solid var(--color-outline-variant);
+  background: var(--color-surface-container-lowest);
+  padding: var(--space-stack-md) var(--space-margin-mobile);
+}
+
+.footerInner {
+  max-width: 720px;
+  margin: 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-stack-sm);
+  font-size: 0.8125rem;
+  color: var(--color-on-surface-variant);
+}
+
+.footerLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-stack-md);
+}
+
+.footerLinks a {
+  color: var(--color-on-surface-variant);
+  text-decoration: none;
+}
+
+.footerLinks a:hover {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+
+@media (min-width: 768px) {
+  .header,
+  .footer {
+    padding-left: var(--space-margin-desktop);
+    padding-right: var(--space-margin-desktop);
+  }
+
+  .title {
+    font-size: 2.5rem;
+  }
+}
