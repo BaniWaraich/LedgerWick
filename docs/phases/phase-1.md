@@ -326,6 +326,12 @@ uploads, previews and the export all sit on this. It is small, and everything do
 frontend, the store is writable from a background workflow as well as a request, and a
 cross-workspace fetch attempt is tested and fails.
 
+The prefix is enforced by the type system, not by the writer remembering it: `DocumentStore.put`
+accepts a branded `DocumentKey`, which only `documentKey()` in `src/storage/keys.ts` can produce,
+and `tests/storage/keys-are-unavoidable.test.ts` bans the cast that would forge one. **A feature
+that stores bytes builds its key with `documentKey()`. There is no other way, and widening `put`
+to accept a string, or casting to get round it, is not a fix.**
+
 ---
 
 ### C. Statement Intake & Identification
@@ -340,7 +346,10 @@ execution and the polled processing state the rest of the phase reuses.
 **Dependencies.** A, B.
 
 **Complete when.** A statement moves `UPLOADING → IDENTIFYING` and either binds to an account with
-a known period or reaches `FAILED` with a human-readable reason. Account lookup provably never
+a known period or reaches `FAILED` with a human-readable reason. This is the first feature that
+writes to the document store, so it is the first to build a `DocumentKey` — via `documentKey()`
+with the statement row's id as the unique segment (see B), never a hand-rolled path — and the
+first to write from a background workflow rather than a request. Account lookup provably never
 leaves the workspace. Files in one batch reach independent outcomes. State survives a refresh.
 A statement with no determinable period fails rather than being silently accepted.
 
