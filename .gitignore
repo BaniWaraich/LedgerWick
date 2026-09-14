@@ -27,3 +27,11 @@ next-env.d.ts
 
 # vercel
 .vercel
+
+# vendored agent skills
+# Installed by the skills tooling and restorable from it, so they are not part of the
+# source of this project. The hooks and settings under .claude/ are tracked deliberately —
+# those are ours and shape how agents work here.
+.agents/
+.claude/skills/
+skills-lock.json
