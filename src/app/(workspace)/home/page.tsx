@@ -1,10 +1,12 @@
 /**
  * The workspace home.
  *
- * Deliberately close to empty: the reconciliation surfaces the wireframe shows belong to
- * features C onwards, and building them here as placeholders would be inventing product.
- * What this page proves is that the shell resolves a workspace from the session.
+ * Still close to empty: the reconciliation surfaces the wireframe shows belong to features
+ * D onwards, and building them here as placeholders would be inventing product. What it
+ * offers is the one thing that now works end to end — getting statements in.
  */
+
+import Link from "next/link";
 
 import { requireScope } from "../../../auth/workspace";
 import styles from "./page.module.css";
@@ -18,9 +20,11 @@ export default async function HomePage() {
     <header className={styles.header}>
       <h1 className={styles.title}>Welcome back</h1>
       <p className={styles.subtitle}>
-        Your workspace is ready. Connecting a mailbox and uploading statements arrive with the next
-        features.
+        Start by uploading your bank statements. Connecting a mailbox arrives with a later feature.
       </p>
+      <Link className={styles.action} href="/statements/upload">
+        Upload statements
+      </Link>
     </header>
   );
 }
