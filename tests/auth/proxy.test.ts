@@ -56,7 +56,13 @@ describe("a request carrying a session cookie", () => {
 
 describe("the matcher", () => {
   it("covers every authenticated area", () => {
-    for (const path of ["/home", "/home/anything", "/workspaces", "/workspaces/new"]) {
+    for (const path of [
+      "/home",
+      "/home/anything",
+      "/workspaces",
+      "/workspaces/new",
+      "/statements/upload",
+    ]) {
       expect(matches(path), `${path} is unprotected`).toBe(true);
     }
   });
@@ -64,7 +70,15 @@ describe("the matcher", () => {
   it("leaves the public routes alone", () => {
     // Matching these would redirect a signed-out visitor away from the page that signs
     // them in, or break the OAuth callback — a loop, not a lockout.
-    for (const path of ["/", "/login", "/api/auth/signin", "/api/auth/callback/google"]) {
+    for (const path of [
+      "/",
+      "/login",
+      "/api/auth/signin",
+      "/api/auth/callback/google",
+      // Inngest calls this one with a signing key, not a session. A redirect in front of
+      // it would break every background workflow.
+      "/api/inngest",
+    ]) {
       expect(matches(path), `${path} must stay reachable signed out`).toBe(false);
     }
   });

@@ -15,7 +15,15 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq, getTableName } from "drizzle-orm";
 
 import { createTestDb, seedBankAccount, seedWorkspace, type TestDb } from "../helpers/db";
-import { bankAccounts, canonicalTransactions, vendors, workspaces } from "../../src/db/schema";
+import {
+  bankAccounts,
+  bankStatements,
+  canonicalTransactions,
+  vendors,
+  workspaces,
+} from "../../src/db/schema";
+import { intakeBatch } from "../../src/statements/intake";
+import { FakeDocumentStore } from "../storage/fake-document-store";
 import { WorkspaceAccessError, listWorkspaces, openWorkspace } from "../../src/db/workspace-scope";
 
 let h: TestDb;
@@ -164,6 +172,63 @@ describe("writing through a scope", () => {
 
     const rows = await h.db.select().from(vendors).where(eq(vendors.id, aliceVendor.id));
     expect(rows).toHaveLength(1);
+  });
+});
+
+describe("statement intake", () => {
+  // spec: docs/workflows/upload-statement.md §3a · docs/phases/phase-1.md §7 C
+  //
+  // C's completion criterion is that "account lookup provably never leaves the workspace".
+  // These are that proof.
+  it("keeps one workspace's statements out of another's", async () => {
+    const aliceScope = await openWorkspace(h.db, alice.user.id, alice.workspace.id);
+    const bobScope = await openWorkspace(h.db, bob.user.id, bob.workspace.id);
+    const store = new FakeDocumentStore();
+
+    const { results } = await intakeBatch(
+      aliceScope,
+      store,
+      [new File(["Date,Amount\n"], "march.csv", { type: "text/csv" })],
+      async () => {},
+    );
+    const statementId = results[0].statementId!;
+
+    // Bob knows the id — it is a uuid in a URL, not a secret — and it buys him nothing.
+    await expect(
+      bobScope.select(bankStatements, eq(bankStatements.id, statementId)),
+    ).resolves.toEqual([]);
+    // Nor can he bind it to an account of his own.
+    await expect(
+      bobScope.update(bankStatements, { state: "PARSING" }, eq(bankStatements.id, statementId)),
+    ).resolves.toEqual([]);
+  });
+
+  it("does not match an account identifier belonging to another workspace", async () => {
+    // The same business banking with the same bank, in two workspaces. Step 3a: "An
+    // account identifier appearing in another Workspace is not a match and must not be
+    // reported to the user in any form."
+    const aliceScope = await openWorkspace(h.db, alice.user.id, alice.workspace.id);
+    const bobScope = await openWorkspace(h.db, bob.user.id, bob.workspace.id);
+
+    const identifier = "XXXX9999";
+    await aliceScope.insert(bankAccounts, {
+      bankName: "HDFC Bank",
+      accountIdentifier: identifier,
+      currency: "INR",
+    });
+
+    // Bob's lookup for the very same identifier finds nothing...
+    await expect(
+      bobScope.select(bankAccounts, eq(bankAccounts.accountIdentifier, identifier)),
+    ).resolves.toEqual([]);
+
+    // ...so he creates his own, and the unique index does not collide across workspaces.
+    const [bobAccount] = await bobScope.insert(bankAccounts, {
+      bankName: "HDFC Bank",
+      accountIdentifier: identifier,
+      currency: "INR",
+    });
+    expect(bobAccount.workspaceId).toBe(bob.workspace.id);
   });
 });
 
