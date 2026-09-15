@@ -8,6 +8,8 @@
  * remembers it is not an invariant.
  */
 
+import { randomUUID } from "node:crypto";
+
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
@@ -19,6 +21,7 @@ import {
 } from "../helpers/db";
 import {
   bankAccounts,
+  bankStatements,
   canonicalTransactions,
   invoiceRequirements,
   invoices,
@@ -122,6 +125,35 @@ describe("canonical transaction identity", () => {
     const onOtherAccount = await insertTransaction({ bankAccountId: other.id });
 
     expect(onOtherAccount.bankAccountId).toBe(other.id);
+  });
+});
+
+describe("a statement waiting for its account", () => {
+  // spec: docs/state-machines.md §1 · upload-statement Step 3a
+  //
+  // NEEDS_ACCOUNT exists so the workflow can finish while the user is away. The shape it
+  // depends on is that the state is reachable with no binding at all — if the column were
+  // required, the pause would have to be represented somewhere else.
+  it("holds NEEDS_ACCOUNT with no bank account bound", async () => {
+    const [statement] = await h.db
+      .insert(bankStatements)
+      .values({
+        workspaceId,
+        uploadBatchId: randomUUID(),
+        filename: "march.pdf",
+        mimeType: "application/pdf",
+        storageRef: "workspaces/x/statements/y/march.pdf",
+        state: "NEEDS_ACCOUNT" as const,
+        identifiedBankName: "HDFC Bank",
+        periodStart: "2026-03-01",
+        periodEnd: "2026-03-31",
+      })
+      .returning();
+
+    expect(statement.state).toBe("NEEDS_ACCOUNT");
+    expect(statement.bankAccountId).toBeNull();
+    // What the document said survives independently of what it was bound to.
+    expect(statement.identifiedBankName).toBe("HDFC Bank");
   });
 });
 

@@ -9,6 +9,8 @@
  * thing standing behind the storage layer.
  */
 
+import { randomUUID } from "node:crypto";
+
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createTestDb, seedBankAccount, seedWorkspace, type TestDb } from "../helpers/db";
@@ -52,6 +54,7 @@ beforeAll(async () => {
 
   const [statement] = await aliceScope.insert(bankStatements, {
     bankAccountId: account.id,
+    uploadBatchId: randomUUID(),
     filename: "march.csv",
     mimeType: "text/csv",
     storageRef: statementObject.key,

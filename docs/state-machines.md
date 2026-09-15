@@ -20,16 +20,22 @@ The processing lifecycle of one uploaded file.
 
 ```text
 UPLOADING → IDENTIFYING → PARSING → VALIDATING → COMPLETED
-                                              ↘
-                                                FAILED
+                  ↓                           ↘
+            NEEDS_ACCOUNT → PARSING             FAILED
 ```
 
 `FAILED` is reachable from any non-terminal state.
+
+`NEEDS_ACCOUNT` is the one place this machine waits for a person. The workflow that
+reached it has completed; the pause is this state in the database, not a suspended
+execution (`docs/architecture.md §12C`). The user choosing or creating an account is what
+moves it on.
 
 | State         | Meaning                                                                       |
 | ------------- | ----------------------------------------------------------------------------- |
 | `UPLOADING`   | Bytes are being transferred and stored.                                       |
 | `IDENTIFYING` | Determining whether the file is a bank statement, and for which bank/account. |
+| `NEEDS_ACCOUNT` | The file is a bank statement, but the document does not say which account it covers. Awaiting the user. |
 | `PARSING`     | Extracting statement lines and balances.                                      |
 | `VALIDATING`  | Checking the extracted data against the statement's own balances.             |
 | `COMPLETED`   | Processing finished. See the validation outcome below.                        |
@@ -54,6 +60,7 @@ an action, not as a failure.
 | --------------------------- | --------------------------------------------- |
 | `UPLOADING`                 | Uploading your statement…                     |
 | `IDENTIFYING`               | Identifying your bank…                        |
+| `NEEDS_ACCOUNT`             | Tell us which account this statement covers.  |
 | `PARSING`                   | Extracting transactions…                      |
 | `VALIDATING`                | Checking your transactions…                   |
 | `COMPLETED` + `VALID`       | Statement processed.                          |

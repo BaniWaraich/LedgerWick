@@ -40,6 +40,7 @@ import {
 export const statementStateEnum = pgEnum("statement_state", [
   "UPLOADING",
   "IDENTIFYING",
+  "NEEDS_ACCOUNT",
   "PARSING",
   "VALIDATING",
   "COMPLETED",
@@ -239,10 +240,29 @@ export const bankStatements = pgTable(
     bankAccountId: uuid("bank_account_id").references(() => bankAccounts.id, {
       onDelete: "restrict",
     }),
+    /**
+     * The files of one upload, so a batch can be shown together.
+     *
+     * upload-statement §11: a batch is a presentation grouping and nothing more — the
+     * files within it are processed independently and may reach different outcomes, so
+     * nothing keyed on this column may make one file's fate depend on another's.
+     */
+    uploadBatchId: uuid("upload_batch_id").notNull(),
     filename: text("filename").notNull(),
     mimeType: text("mime_type").notNull(),
     storageRef: text("storage_ref").notNull(),
     state: statementStateEnum("state").notNull().default("UPLOADING"),
+    /*
+     * What identification read off the document, as printed.
+     *
+     * Separate from the bound `bankAccountId` on purpose. A statement in NEEDS_ACCOUNT
+     * has these and no binding, and that is what the account picker shows the user; a
+     * bound statement keeps them so a wrong binding can be traced back to what the
+     * document actually said rather than to what we decided it meant.
+     */
+    identifiedBankName: text("identified_bank_name"),
+    identifiedAccountIdentifier: text("identified_account_identifier"),
+    identifiedAccountType: text("identified_account_type"),
     validationOutcome: validationOutcomeEnum("validation_outcome"),
     failureReason: text("failure_reason"),
     periodStart: date("period_start"),
@@ -258,6 +278,7 @@ export const bankStatements = pgTable(
   },
   (t) => [
     index("bank_statements_workspace_idx").on(t.workspaceId),
+    index("bank_statements_batch_idx").on(t.workspaceId, t.uploadBatchId),
     index("bank_statements_coverage_idx").on(t.bankAccountId, t.periodStart, t.periodEnd),
   ],
 );

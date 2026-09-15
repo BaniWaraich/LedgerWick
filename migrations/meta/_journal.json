@@ -15,6 +15,13 @@
       "when": 1788943053421,
       "tag": "0001_stale_purifiers",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789461456838,
+      "tag": "0002_crazy_madame_masque",
+      "breakpoints": true
     }
   ]
 }
