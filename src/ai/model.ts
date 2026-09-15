@@ -52,6 +52,19 @@ export type Inference<T> = { ok: true; value: T } | { ok: false; reason: string 
  */
 const DEFAULT_MODEL = "anthropic/claude-sonnet-5";
 
+/**
+ * The model to call.
+ *
+ * `??` is wrong here and was: `.env.example` ships `AI_MODEL=` and a pulled `.env.local`
+ * carries it as an empty string, which is *set* as far as `??` is concerned. That sent an
+ * empty model id to the gateway and failed every call with an error that pointed at the
+ * gateway rather than at the blank line in the env file. An unset variable and a variable
+ * set to nothing mean the same thing to a reader, so they mean the same thing here.
+ */
+export function modelId(): string {
+  return process.env.AI_MODEL?.trim() || DEFAULT_MODEL;
+}
+
 /** Ask the model for one structured answer. */
 export async function inferStructure<T>(request: {
   prompt: PromptDefinition;
@@ -60,7 +73,7 @@ export async function inferStructure<T>(request: {
 }): Promise<Inference<T>> {
   try {
     const { object } = await generateObject({
-      model: process.env.AI_MODEL ?? DEFAULT_MODEL,
+      model: modelId(),
       schema: request.schema,
       system: request.prompt.system,
       messages: [{ role: "user", content: request.content }],
