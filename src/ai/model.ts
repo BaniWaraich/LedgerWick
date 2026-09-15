@@ -14,7 +14,7 @@
 
 import "server-only";
 
-import { generateObject } from "ai";
+import { generateObject, NoObjectGeneratedError } from "ai";
 import type { ZodType } from "zod";
 
 /**
@@ -68,9 +68,21 @@ export async function inferStructure<T>(request: {
 
     return { ok: true, value: object };
   } catch (error) {
-    // Everything lands here: a refusal, output that would not fit the schema, a timeout, a
-    // provider outage. The caller decides what each means for its own state machine; this
-    // module's job is only to guarantee that nothing unvalidated gets past it.
-    return { ok: false, reason: error instanceof Error ? error.message : "inference failed" };
+    // The definition of done requires recoverable and non-recoverable failures to be
+    // distinguished, and this is where the two are told apart.
+    //
+    // The model answered and the answer was unusable — a refusal, or output that would
+    // not fit the schema. That is a fact about this document, it will not improve on a
+    // retry, and the caller records it as state.
+    if (NoObjectGeneratedError.isInstance(error)) {
+      return { ok: false, reason: error.message };
+    }
+
+    // The model never answered: no credit card on the gateway, an expired key, a rate
+    // limit, a timeout, a provider outage. That is a fact about our infrastructure and
+    // says nothing about the document, so it must NOT come back as "we could not read
+    // this" — that would permanently fail a perfectly good statement because billing
+    // lapsed. Rethrowing lets the workflow retry and surfaces it as a failed run.
+    throw error;
   }
 }

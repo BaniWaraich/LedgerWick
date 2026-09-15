@@ -49,7 +49,12 @@ function modelReturning(value: Identification): IdentifyDocument {
   return async () => ({ ok: true, value });
 }
 
-const modelThatFails: IdentifyDocument = async () => ({ ok: false, reason: "provider timeout" });
+const modelThatFails: IdentifyDocument = async () => ({ ok: false, reason: "no object generated" });
+
+/** The gateway never answered — a lapsed card, an expired key, an outage. */
+const modelThatIsUnreachable: IdentifyDocument = async () => {
+  throw new Error("AI Gateway requires a valid credit card on file to service requests");
+};
 
 /** An uploaded, stored statement awaiting identification. */
 async function uploaded(store: FakeDocumentStore): Promise<string> {
@@ -172,6 +177,24 @@ describe("a statement we cannot use", () => {
     expect(row.state).toBe("FAILED");
     expect(row.failureReason).toMatch(/dates this statement covers/);
     expect(row.bankAccountId).toBeNull();
+  });
+
+  it("does not blame the document when the model was unreachable", async () => {
+    const store = new FakeDocumentStore();
+    const id = await uploaded(store);
+
+    // Observed for real on 2026-09-15: the gateway refused every request because no card
+    // was on file. Marking the statement unreadable would permanently fail a perfectly
+    // good document because of our billing, so the error propagates instead and the
+    // workflow retries. docs/definition-of-done.md: recoverable and non-recoverable
+    // failures are distinguished.
+    await expect(identifyStatement(scope, store, modelThatIsUnreachable, id)).rejects.toThrow(
+      /credit card/,
+    );
+
+    // Left mid-flight for the retry, never FAILED.
+    expect((await stateOf(id)).state).toBe("IDENTIFYING");
+    expect((await stateOf(id)).failureReason).toBeNull();
   });
 
   it("fails when the model cannot answer", async () => {
