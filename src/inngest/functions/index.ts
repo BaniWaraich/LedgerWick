@@ -6,4 +6,6 @@
  * through an event that quietly goes nowhere.
  */
 
-export const functions = [];
+import { identifyStatementFunction } from "./identify-statement";
+
+export const functions = [identifyStatementFunction];
