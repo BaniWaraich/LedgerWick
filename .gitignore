@@ -35,3 +35,11 @@ next-env.d.ts
 .agents/
 .claude/skills/
 skills-lock.json
+
+# unredacted fixture source documents
+# The inbox is a staging area on your machine only: statements land here as they come
+# off a bank, with real account numbers, names and balances still in them. Nothing in it
+# is ever committed. Files leave by being redacted and moved up into fixtures/statements/,
+# which is tracked — see fixtures/README.md.
+/fixtures/statements/inbox/*
+!/fixtures/statements/inbox/.gitkeep
