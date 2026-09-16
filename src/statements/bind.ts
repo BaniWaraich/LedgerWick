@@ -10,13 +10,12 @@
  * of any identifier arriving from a client.
  */
 
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { bankAccounts, bankStatements } from "../db/schema";
 import type { WorkspaceScope } from "../db/workspace-scope";
-
-/** The currency a user-created account is opened in. See `identify.ts`. */
-const DEFAULT_CURRENCY = "INR";
+import { currencyFor } from "../money/currencies";
+import { accountIdentifierKey, bankNameKey } from "./account-identity";
 
 export class StatementNotWaitingError extends Error {
   constructor() {
@@ -29,6 +28,21 @@ export class UnknownBankAccountError extends Error {
   constructor() {
     super("No such bank account in this workspace");
     this.name = "UnknownBankAccountError";
+  }
+}
+
+/**
+ * The chosen currency is not one this system can count in.
+ *
+ * A currency arriving from a form is a client value and gets the same treatment as a chosen
+ * account id: checked, never trusted. `src/money/currencies.ts` explains why the list is
+ * short — an account opened in a currency whose minor-unit exponent we do not know cannot
+ * have its amounts read correctly, so accepting one would be worse than refusing it.
+ */
+export class UnsupportedCurrencyError extends Error {
+  constructor() {
+    super("That currency is not supported");
+    this.name = "UnsupportedCurrencyError";
   }
 }
 
@@ -47,7 +61,8 @@ export async function accountsForBinding(scope: WorkspaceScope) {
 export async function bindStatementToAccount(
   scope: WorkspaceScope,
   statementId: string,
-  choice: { bankAccountId: string } | { bankName: string; accountIdentifier: string },
+  choice:
+    { bankAccountId: string } | { bankName: string; accountIdentifier: string; currency: string },
 ): Promise<void> {
   const statement = await scope.selectOne(bankStatements, eq(bankStatements.id, statementId));
   if (!statement || statement.state !== "NEEDS_ACCOUNT") throw new StatementNotWaitingError();
@@ -60,13 +75,45 @@ export async function bindStatementToAccount(
     if (!account) throw new UnknownBankAccountError();
     bankAccountId = account.id;
   } else {
-    const [created] = await scope.insert(bankAccounts, {
-      bankName: choice.bankName,
-      accountIdentifier: choice.accountIdentifier,
-      accountType: statement.identifiedAccountType,
-      currency: DEFAULT_CURRENCY,
-    });
-    bankAccountId = created.id;
+    // Checked against what this system can count in, not taken on the form's word — the
+    // same treatment a chosen account id gets two lines above.
+    const currency = currencyFor(choice.currency);
+    if (!currency) throw new UnsupportedCurrencyError();
+
+    /*
+     * "Create" can turn out to mean "the one you already have".
+     *
+     * A user typing `axis bank` where `AXIS BANK` exists is naming that account, not asking
+     * for a second one — and `bank_accounts_identity_idx` now agrees, so inserting would
+     * raise a unique violation rather than quietly duplicating. Binding to what is there is
+     * both what they meant and the only outcome that keeps Step 5a's deduplication intact.
+     *
+     * The existing account keeps its currency, exactly as it does in `identify.ts`: a
+     * currency typed into this form does not re-denominate an account that already has
+     * transactions coming.
+     */
+    const existing = await scope.selectOne(
+      bankAccounts,
+      and(
+        sql`lower(${bankAccounts.bankName}) = ${bankNameKey(choice.bankName)}`,
+        sql`upper(${bankAccounts.accountIdentifier}) = ${accountIdentifierKey(choice.accountIdentifier)}`,
+      ),
+    );
+
+    if (existing) {
+      bankAccountId = existing.id;
+    } else {
+      const [created] = await scope.insert(bankAccounts, {
+        bankName: choice.bankName,
+        accountIdentifier: choice.accountIdentifier,
+        accountType: statement.identifiedAccountType,
+        // What the document said it was, where it said anything. A user correcting the
+        // account is not also telling us the document was a card when it was not.
+        accountKind: statement.identifiedAccountKind ?? "BANK_ACCOUNT",
+        currency: currency.code,
+      });
+      bankAccountId = created.id;
+    }
   }
 
   await scope.update(

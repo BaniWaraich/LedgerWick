@@ -10,13 +10,18 @@
  * than an import, so the branches below can be tested without one.
  */
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { bankAccounts, bankStatements } from "../db/schema";
 import type { WorkspaceScope } from "../db/workspace-scope";
 import type { Inference } from "../ai/model";
-import type { Identification } from "../ai/prompts/identify-statement.v1";
+import type { Identification } from "../ai/prompts/identify-statement.v2";
+import { currencyFor } from "../money/currencies";
+import { accountIdentifierKey, bankNameKey } from "./account-identity";
 import type { DocumentStore } from "../storage/document-store";
+
+/** The two kinds of account a statement can belong to. Mirrors `accountKindEnum`. */
+type AccountKind = (typeof bankAccounts.$inferInsert)["accountKind"] & {};
 
 /** The model call, as this module needs it. Injected so the branches are testable. */
 export type IdentifyDocument = (document: {
@@ -27,21 +32,18 @@ export type IdentifyDocument = (document: {
 
 /** Human-readable failures. `§9`: an explanation, not a technical error. */
 const NOT_A_STATEMENT =
-  "This doesn't look like a bank statement. Please upload a statement downloaded from your bank.";
-const NO_PERIOD =
-  "We couldn't tell which dates this statement covers, so we can't use it. Please upload a copy that shows the statement period.";
+  "This doesn't look like a bank or credit card statement. Please upload a statement downloaded from your bank or card issuer.";
 const UNREADABLE = "We couldn't read this statement. Please try uploading a clearer copy.";
 const BYTES_MISSING = "We couldn't open the file that was uploaded. Please upload it again.";
-
-/**
- * The currency a new account is created in.
+/*
+ * Every retry is spent and the statement is still in IDENTIFYING.
  *
- * Phase 1 is India-first and the bound account is what determines how a statement's
- * amounts are read (Step 3a). A multi-currency business is a real case and not this
- * phase's; when it arrives, it arrives as a question asked at account creation rather
- * than as a guess made here.
+ * The wording is deliberately about us rather than about their document: nothing here
+ * suggests the statement was at fault, because it was not — `inferStructure` rethrows
+ * infrastructure failures precisely so they are not reported as an unreadable document.
  */
-const DEFAULT_CURRENCY = "INR";
+const OUR_FAULT =
+  "Something went wrong on our side while reading this statement. Please try uploading it again.";
 
 /** States from which identification is still the right thing to do. */
 const IDENTIFIABLE = new Set(["UPLOADING", "IDENTIFYING"]);
@@ -55,21 +57,41 @@ const IDENTIFIABLE = new Set(["UPLOADING", "IDENTIFYING"]);
  */
 async function bindAccount(
   scope: WorkspaceScope,
-  bankName: string,
-  accountIdentifier: string,
-  accountType: string | null,
+  account: {
+    bankName: string;
+    accountIdentifier: string;
+    accountType: string | null;
+    accountKind: AccountKind;
+    currency: string;
+  },
 ): Promise<string> {
+  // Compared the way `bank_accounts_identity_idx` compares them, not literally. A model
+  // reporting "AXIS BANK" where it once reported "Axis Bank" is describing the same account,
+  // and a literal match here would miss it and then create a second one.
   const existing = await scope.selectOne(
     bankAccounts,
-    and(eq(bankAccounts.bankName, bankName), eq(bankAccounts.accountIdentifier, accountIdentifier)),
+    and(
+      sql`lower(${bankAccounts.bankName}) = ${bankNameKey(account.bankName)}`,
+      sql`upper(${bankAccounts.accountIdentifier}) = ${accountIdentifierKey(account.accountIdentifier)}`,
+    ),
   );
+  /*
+   * Found, and returned exactly as it is.
+   *
+   * Nothing this statement says updates the account — not its currency, not its kind. Step
+   * 3a: an account's currency is established when it is created and never rewritten, because
+   * canonical transactions carry a currency of their own and re-denominating an account
+   * re-denominates movements already recorded against it. A statement that disagrees with
+   * its account is a question for a person, not a correction to apply here.
+   */
   if (existing) return existing.id;
 
   const [created] = await scope.insert(bankAccounts, {
-    bankName,
-    accountIdentifier,
-    accountType,
-    currency: DEFAULT_CURRENCY,
+    bankName: account.bankName,
+    accountIdentifier: account.accountIdentifier,
+    accountType: account.accountType,
+    accountKind: account.accountKind,
+    currency: account.currency,
   });
   return created.id;
 }
@@ -81,6 +103,26 @@ async function fail(scope: WorkspaceScope, statementId: string, reason: string):
     { state: "FAILED", failureReason: reason },
     eq(bankStatements.id, statementId),
   );
+}
+
+/**
+ * Give up on a statement whose workflow exhausted its retries.
+ *
+ * Called from the background workflow's terminal failure handler rather than from
+ * `identifyStatement` itself: getting here means the run never completed — a gateway
+ * outage, a lapsed card, an expired key — so there is no branch inside identification that
+ * could have recorded it. Without this the row would sit in `IDENTIFYING` forever and the
+ * polling UI would spin on it, which is the "failure swallowed rather than recorded as
+ * state" that `docs/definition-of-done.md` forbids.
+ *
+ * Scoped like everything else here, so a tampered event carrying another workspace's
+ * statement id changes nothing.
+ */
+export async function recordTerminalFailure(
+  scope: WorkspaceScope,
+  statementId: string,
+): Promise<void> {
+  await fail(scope, statementId, OUR_FAULT);
 }
 
 /**
@@ -125,33 +167,52 @@ export async function identifyStatement(
 
   const identification = result.value;
 
-  if (!identification.isBankStatement) {
+  if (identification.documentKind === "SOMETHING_ELSE") {
     await fail(scope, statementId, NOT_A_STATEMENT);
     return;
   }
 
-  // Step 3: "The statement period is required. A statement whose period cannot be
-  // determined cannot be used for coverage tracking and must be treated as FAILED rather
-  // than silently accepted."
-  if (!identification.periodStart || !identification.periodEnd) {
-    await fail(scope, statementId, NO_PERIOD);
-    return;
-  }
+  const accountKind: AccountKind =
+    identification.documentKind === "CREDIT_CARD_STATEMENT" ? "CREDIT_CARD" : "BANK_ACCOUNT";
 
-  // What the document said, kept whether or not it is enough to bind on.
+  /*
+   * The period, only if the document declared one.
+   *
+   * `0008`: a statement that declares none is no longer failed — it proceeds with no period
+   * and feature D derives the range from the transactions it extracts. Both dates or
+   * neither: half a range is not a period, and a model that returned only one end has told
+   * us nothing we can record as coverage.
+   */
+  const declaresPeriod = Boolean(identification.periodStart && identification.periodEnd);
+
+  // What the document said, kept whether or not it is enough to bind on. The currency is
+  // kept raw, including one we do not support, because it is the only evidence of why a
+  // statement ended up waiting for a person.
   const identified = {
     identifiedBankName: identification.bankName,
     identifiedAccountIdentifier: identification.accountIdentifier,
     identifiedAccountType: identification.accountType,
-    periodStart: identification.periodStart,
-    periodEnd: identification.periodEnd,
+    identifiedAccountKind: accountKind,
+    identifiedCurrency: identification.currency,
+    periodStart: declaresPeriod ? identification.periodStart : null,
+    periodEnd: declaresPeriod ? identification.periodEnd : null,
+    periodSource: declaresPeriod ? ("DECLARED" as const) : null,
   };
 
-  // Step 3a: "A statement is never bound to an account by inference alone when the
-  // identifier is absent. If the document does not state which account it covers, the user
-  // chooses." The bank name alone is not enough — a business may hold two accounts at one
-  // bank.
-  if (!identification.bankName || !identification.accountIdentifier) {
+  const currency = currencyFor(identification.currency);
+
+  /*
+   * Step 3a: "A statement is never bound to an account by inference alone when the
+   * identifier is absent. If the document does not state which account it covers, the user
+   * chooses." The bank name alone is not enough — a business may hold two accounts at one
+   * bank.
+   *
+   * An unknown currency stops us here for the same reason. It is not cosmetic: it is the
+   * unit every amount in feature D is read in, and an account's currency is permanent once
+   * set. Defaulting it would bake a guess into the one field nothing later can correct —
+   * which is how a Bank of Ireland account came to be denominated in rupees.
+   */
+  if (!identification.bankName || !identification.accountIdentifier || !currency) {
     await scope.update(
       bankStatements,
       { ...identified, state: "NEEDS_ACCOUNT" },
@@ -160,12 +221,13 @@ export async function identifyStatement(
     return;
   }
 
-  const bankAccountId = await bindAccount(
-    scope,
-    identification.bankName,
-    identification.accountIdentifier,
-    identification.accountType,
-  );
+  const bankAccountId = await bindAccount(scope, {
+    bankName: identification.bankName,
+    accountIdentifier: identification.accountIdentifier,
+    accountType: identification.accountType,
+    accountKind,
+    currency: currency.code,
+  });
 
   await scope.update(
     bankStatements,

@@ -40,10 +40,40 @@ operation. Synonymous with **Business** in V1; prefer **Workspace** in code.
 
 A financial account belonging to a Workspace. Owns Canonical Transactions.
 
+A credit card is a Bank Account whose **Account Kind** is `CREDIT_CARD`. The money moves
+the same way and needs the same invoices, so it is the same thing to every workflow that
+reads it; the kind records the difference where one exists.
+
+### Account Kind
+
+What sort of account a Bank Account is: `BANK_ACCOUNT` or `CREDIT_CARD`. Descriptive, not
+identifying — two accounts are the same account because they share a bank and an account
+identifier, never because they share a kind.
+
+### Currency
+
+The unit a Bank Account's money is counted in, as an ISO 4217 code. Established when the
+account is created, from what its first statement said, and never rewritten afterwards —
+Canonical Transactions carry a currency of their own, so changing an account's currency
+later would re-denominate history.
+
+Each currency has a **minor-unit exponent** (2 for INR, 0 for JPY), which is what makes
+the integer amounts of `docs/decisions/0004-data-access.md` readable.
+
 ### Bank Statement
 
 An uploaded file covering one Bank Account for one period. An input, not a source of
 truth. Produces Statement Lines.
+
+Both bank account statements and credit card statements are Bank Statements. Nothing else
+is.
+
+### Statement Period
+
+The date range a Bank Statement covers. **Declared** when the document states it,
+**derived** when it did not and the range was taken from the transactions the statement
+turned out to contain. Which of the two it is, is recorded; see
+`docs/decisions/0008-statement-period-provenance.md`.
 
 ### Statement Line
 

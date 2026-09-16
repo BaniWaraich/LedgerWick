@@ -15,6 +15,7 @@ import {
   bindStatementToAccount,
   StatementNotWaitingError,
   UnknownBankAccountError,
+  UnsupportedCurrencyError,
 } from "../../../statements/bind";
 
 export type BindFormState = { error?: string };
@@ -29,11 +30,14 @@ export async function bindAccountAction(
   const existingAccountId = String(formData.get("bankAccountId") ?? "");
   const bankName = String(formData.get("bankName") ?? "").trim();
   const accountIdentifier = String(formData.get("accountIdentifier") ?? "").trim();
+  const currency = String(formData.get("currency") ?? "")
+    .trim()
+    .toUpperCase();
 
   const choice =
     existingAccountId !== ""
       ? { bankAccountId: existingAccountId }
-      : { bankName, accountIdentifier };
+      : { bankName, accountIdentifier, currency };
 
   if (!("bankAccountId" in choice) && (choice.bankName === "" || choice.accountIdentifier === "")) {
     return { error: "Enter both the bank and the account number." };
@@ -44,6 +48,9 @@ export async function bindAccountAction(
   } catch (error) {
     if (error instanceof UnknownBankAccountError) {
       return { error: "Choose an account from this workspace." };
+    }
+    if (error instanceof UnsupportedCurrencyError) {
+      return { error: "Choose a currency from the list." };
     }
     if (error instanceof StatementNotWaitingError) {
       // A stale form, a double submit, or a back button. The statement has already moved

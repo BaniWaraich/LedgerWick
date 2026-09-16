@@ -15,7 +15,7 @@
 import "server-only";
 
 import { inferStructure } from "../ai/model";
-import { identificationSchema, identifyStatementPrompt } from "../ai/prompts/identify-statement.v1";
+import { identificationSchema, identifyStatementPrompt } from "../ai/prompts/identify-statement.v2";
 import type { IdentifyDocument } from "./identify";
 
 /**

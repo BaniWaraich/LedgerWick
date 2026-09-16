@@ -54,6 +54,31 @@ A separate field, meaningful only when the state is `COMPLETED`.
 successfully; the system simply does not trust the result. It is surfaced to the user as
 an action, not as a failure.
 
+### Period source
+
+A separate field recording how the statement's period is known. Null until it is.
+
+| Value      | Meaning                                                                      |
+| ---------- | ---------------------------------------------------------------------------- |
+| `DECLARED` | The document stated the period it covers, and this is what it stated.        |
+| `DERIVED`  | The document stated no period; the range is that of the transactions parsed. |
+
+Identification only ever produces `DECLARED`. A document that declares no period is not a
+failure — it proceeds with no period at all, and parsing supplies a `DERIVED` one. See
+`docs/decisions/0008-statement-period-provenance.md`.
+
+### Account kind
+
+A field on the Bank Account a statement is bound to, not on the statement.
+
+| Value          | Meaning                       |
+| -------------- | ----------------------------- |
+| `BANK_ACCOUNT` | An account held at a bank.    |
+| `CREDIT_CARD`  | A credit card account.        |
+
+Neither of these is a state. They are listed here because `src/db/schema.ts` takes its
+enumerated values from this document.
+
 ### User-facing messages
 
 | Condition                   | Message                                       |

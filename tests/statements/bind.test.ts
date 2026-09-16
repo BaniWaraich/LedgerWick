@@ -15,11 +15,12 @@ import { createTestDb, seedWorkspace, type TestDb } from "../helpers/db";
 import { FakeDocumentStore } from "../storage/fake-document-store";
 import { bankAccounts, bankStatements } from "../../src/db/schema";
 import { openWorkspace, type WorkspaceScope } from "../../src/db/workspace-scope";
-import type { Identification } from "../../src/ai/prompts/identify-statement.v1";
+import type { Identification } from "../../src/ai/prompts/identify-statement.v2";
 import {
   bindStatementToAccount,
   StatementNotWaitingError,
   UnknownBankAccountError,
+  UnsupportedCurrencyError,
 } from "../../src/statements/bind";
 import { identifyStatement } from "../../src/statements/identify";
 import { intakeBatch } from "../../src/statements/intake";
@@ -39,16 +40,20 @@ afterAll(async () => {
 });
 
 const unidentifiedAccount: Identification = {
-  isBankStatement: true,
+  documentKind: "BANK_STATEMENT",
   bankName: "HDFC Bank",
   accountIdentifier: null,
   accountType: "Current",
+  currency: "INR",
   periodStart: "2026-03-01",
   periodEnd: "2026-03-31",
 };
 
 /** A statement that reached NEEDS_ACCOUNT the way a real one does. */
-async function waitingStatement(target: WorkspaceScope = scope): Promise<string> {
+async function waitingStatement(
+  overrides: Partial<Identification> = {},
+  target: WorkspaceScope = scope,
+): Promise<string> {
   const store = new FakeDocumentStore();
   const { results } = await intakeBatch(
     target,
@@ -60,7 +65,7 @@ async function waitingStatement(target: WorkspaceScope = scope): Promise<string>
   await identifyStatement(
     target,
     store,
-    async () => ({ ok: true, value: unidentifiedAccount }),
+    async () => ({ ok: true, value: { ...unidentifiedAccount, ...overrides } }),
     id,
   );
   return id;
@@ -115,6 +120,7 @@ describe("creating an account", () => {
     await bindStatementToAccount(scope, id, {
       bankName: "Axis Bank",
       accountIdentifier: "XXXX3333",
+      currency: "INR",
     });
 
     const row = await stateOf(scope, id);
@@ -124,6 +130,102 @@ describe("creating an account", () => {
     expect(account.workspaceId).toBe(alice.workspace.id);
     // The account type the document did state is carried onto the account the user makes.
     expect(account.accountType).toBe("Current");
+    expect(account.currency).toBe("INR");
+  });
+
+  it("opens it in the currency the user chose", async () => {
+    const id = await waitingStatement();
+
+    await bindStatementToAccount(scope, id, {
+      bankName: "Revolut",
+      accountIdentifier: "XXXX7777",
+      currency: "EUR",
+    });
+
+    const row = await stateOf(scope, id);
+    const [account] = await scope.select(bankAccounts, eq(bankAccounts.id, row.bankAccountId!));
+    expect(account.currency).toBe("EUR");
+  });
+
+  it("refuses a currency this system cannot count in", async () => {
+    const id = await waitingStatement();
+
+    // A currency arriving from a form is a client value and gets the same treatment as a
+    // chosen account id: checked, never trusted. An account opened in a currency whose
+    // minor-unit exponent we do not know cannot have its amounts read correctly.
+    await expect(
+      bindStatementToAccount(scope, id, {
+        bankName: "Some Bank",
+        accountIdentifier: "XXXX8888",
+        currency: "XYZ",
+      }),
+    ).rejects.toBeInstanceOf(UnsupportedCurrencyError);
+
+    // Nothing was created, and the statement is still waiting for a usable answer.
+    expect((await stateOf(scope, id)).state).toBe("NEEDS_ACCOUNT");
+    expect(
+      await scope.select(bankAccounts, eq(bankAccounts.accountIdentifier, "XXXX8888")),
+    ).toHaveLength(0);
+  });
+
+  it("binds to the account that already exists under another spelling", async () => {
+    const id = await waitingStatement();
+    const [existing] = await scope.insert(bankAccounts, {
+      bankName: "KOTAK MAHINDRA BANK",
+      accountIdentifier: "XXXX2468",
+      currency: "INR",
+    });
+
+    // Typing the name in a different case is naming that account, not asking for a second
+    // one — and since the identity index now agrees, inserting would raise a unique
+    // violation rather than quietly duplicating.
+    await bindStatementToAccount(scope, id, {
+      bankName: "Kotak Mahindra Bank",
+      accountIdentifier: "xxxx2468",
+      currency: "INR",
+    });
+
+    const row = await stateOf(scope, id);
+    expect(row.bankAccountId).toBe(existing.id);
+    expect(row.state).toBe("PARSING");
+    expect(
+      await scope.select(bankAccounts, eq(bankAccounts.accountIdentifier, "XXXX2468")),
+    ).toHaveLength(1);
+  });
+
+  it("leaves that account's currency alone", async () => {
+    const id = await waitingStatement();
+    const [existing] = await scope.insert(bankAccounts, {
+      bankName: "IDFC FIRST BANK",
+      accountIdentifier: "XXXX1357",
+      currency: "INR",
+    });
+
+    // A currency typed into this form does not re-denominate an account that already exists.
+    await bindStatementToAccount(scope, id, {
+      bankName: "idfc first bank",
+      accountIdentifier: "XXXX1357",
+      currency: "USD",
+    });
+
+    const [account] = await scope.select(bankAccounts, eq(bankAccounts.id, existing.id));
+    expect(account.currency).toBe("INR");
+  });
+
+  it("carries the document's account kind onto the account the user makes", async () => {
+    const id = await waitingStatement({ documentKind: "CREDIT_CARD_STATEMENT" });
+
+    await bindStatementToAccount(scope, id, {
+      bankName: "ICICI Bank",
+      accountIdentifier: "XXXX9999",
+      currency: "INR",
+    });
+
+    const row = await stateOf(scope, id);
+    const [account] = await scope.select(bankAccounts, eq(bankAccounts.id, row.bankAccountId!));
+    // A user correcting which account a statement belongs to is not also telling us the
+    // document was a bank statement when it was a card statement.
+    expect(account.accountKind).toBe("CREDIT_CARD");
   });
 });
 
@@ -133,6 +235,7 @@ describe("a statement that is not waiting", () => {
     await bindStatementToAccount(scope, id, {
       bankName: "Yes Bank",
       accountIdentifier: "XXXX4444",
+      currency: "INR",
     });
     const bound = await stateOf(scope, id);
 
@@ -142,6 +245,7 @@ describe("a statement that is not waiting", () => {
       bindStatementToAccount(scope, id, {
         bankName: "Yes Bank",
         accountIdentifier: "XXXX5555",
+        currency: "INR",
       }),
     ).rejects.toBeInstanceOf(StatementNotWaitingError);
 
@@ -161,6 +265,7 @@ describe("a statement that is not waiting", () => {
       bindStatementToAccount(carolScope, id, {
         bankName: "HDFC Bank",
         accountIdentifier: "XXXX6666",
+        currency: "INR",
       }),
     ).rejects.toBeInstanceOf(StatementNotWaitingError);
 

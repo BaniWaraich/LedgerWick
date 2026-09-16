@@ -57,18 +57,36 @@ The system uploads the selected files.
 
 ### Step 3 — Identify
 
-The system determines whether each uploaded file is a bank statement.
+The system determines whether each uploaded file is a statement it can use.
 
-If it is a bank statement, the system identifies:
+Two kinds qualify: a **bank account statement** and a **credit card statement**. Both list
+transactions on an account over a period, and the transactions of both need supporting
+documents. Anything else — an invoice, a receipt, a tax document, a payslip, a screenshot
+of a banking app — is rejected, however bank-like it looks.
 
-- Bank
-- Account identifier (account number, masked account number, or IBAN as printed)
+If it qualifies, the system identifies:
+
+- Bank or card issuer
+- Account identifier (account number, masked account number, masked card number, or IBAN as
+  printed)
 - Account type, where available (e.g. savings/current)
-- Statement period — the date range the statement covers
+- Account kind — `BANK_ACCOUNT` or `CREDIT_CARD`
+- Currency, as an ISO 4217 code
+- Statement period, **where the document declares one**
 - Relevant statement information required for parsing
 
-The statement period is required. A statement whose period cannot be determined cannot be
-used for coverage tracking and must be treated as `FAILED` rather than silently accepted.
+Everything above except the currency is read, never deduced. The currency is the single
+exception: where a document does not label it, it may be inferred from a currency symbol
+with corroboration, from the country of an IBAN, or from the issuer's own country. A
+currency that cannot be determined — or that the system has no minor-unit exponent for —
+sends the statement to `NEEDS_ACCOUNT`, because an account's currency is permanent once set.
+
+The statement period is **not** required at this step. Many statements declare only a date
+of issue. Such a statement proceeds with no period recorded; Step 4 derives the range from
+the transactions it extracts, and the period's source is stored alongside it as `DECLARED`
+or `DERIVED`. A period is never inferred from transaction dates *here*, where the
+transactions have not been read — see
+`docs/decisions/0008-statement-period-provenance.md`.
 
 ### Step 3a — Bind to a Bank Account
 
@@ -92,6 +110,11 @@ Matching is performed on the account identifier, scoped to the Workspace and the
 Where a statement shows only a masked account number, the visible digits combined with the
 bank are sufficient for V1; the user confirms on first creation.
 
+The bank name and the identifier are compared ignoring case and surrounding space, because
+a model asked to report a name "as printed" may report `AXIS BANK` for one upload and
+`Axis Bank` for the next, and those are the same account. Nothing beyond typesetting is
+folded away — two differently-named banks stay two banks.
+
 Two rules are absolute:
 
 - **The search for a matching account never leaves the uploading user's Workspace.** An
@@ -103,6 +126,12 @@ Two rules are absolute:
 
 The bound account determines the currency in which the statement's amounts are
 interpreted.
+
+That currency is established when the account is created — from what its first statement
+said, or from what the user chose — and is never rewritten by a later statement. Canonical
+Transactions carry a currency of their own, so changing an account's afterwards would
+re-denominate movements already recorded against it. A statement that appears to disagree
+with its account's currency is a question, not a correction.
 
 ### Step 4 — Parse
 
@@ -212,6 +241,12 @@ bound Bank Account.
 
 Coverage is what later allows the system to tell the user which periods are still missing,
 and to tell a reconciliation run which transactions it has already seen.
+
+Where Step 3 recorded no period because the document declared none, Step 4 supplies one from
+the first and last transaction it extracted, marked `DERIVED`. Coverage reporting must treat
+a derived range as weaker evidence than a declared one: it establishes that movements were
+seen between those dates, not that the bank accounted for that whole window. A statement may
+not reach `COMPLETED` with no period at all.
 
 ### Step 5c — What the balance check does not catch
 

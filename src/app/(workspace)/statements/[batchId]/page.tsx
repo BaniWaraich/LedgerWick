@@ -14,6 +14,7 @@ import { notFound } from "next/navigation";
 
 import { requireScope } from "../../../../auth/workspace";
 import { bankStatements } from "../../../../db/schema";
+import { currencyFor } from "../../../../money/currencies";
 import { accountsForBinding } from "../../../../statements/bind";
 import { AccountPicker } from "./account-picker";
 import { PollWhileProcessing } from "./poll";
@@ -92,6 +93,10 @@ export default async function StatementBatchPage({
                 accounts={accounts}
                 suggestedBankName={statement.identifiedBankName}
                 suggestedAccountIdentifier={statement.identifiedAccountIdentifier}
+                // Only where the document named one we support. An unrecognised code is
+                // why some of these statements are waiting in the first place, and
+                // offering it back as a suggestion would suggest an answer we rejected.
+                suggestedCurrency={currencyFor(statement.identifiedCurrency)?.code ?? null}
               />
             ) : null}
           </li>

@@ -1,0 +1,2 @@
+DROP INDEX "bank_accounts_identity_idx";--> statement-breakpoint
+CREATE UNIQUE INDEX "bank_accounts_identity_idx" ON "bank_accounts" USING btree ("workspace_id",lower("bank_name"),upper("account_identifier"));

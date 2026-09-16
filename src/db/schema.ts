@@ -49,6 +49,10 @@ export const statementStateEnum = pgEnum("statement_state", [
 
 export const validationOutcomeEnum = pgEnum("validation_outcome", ["VALID", "DISCREPANCY"]);
 
+export const accountKindEnum = pgEnum("account_kind", ["BANK_ACCOUNT", "CREDIT_CARD"]);
+
+export const periodSourceEnum = pgEnum("period_source", ["DECLARED", "DERIVED"]);
+
 export const requirementStateEnum = pgEnum("requirement_state", [
   "IDENTIFIED",
   "SEARCHING",
@@ -212,13 +216,40 @@ export const bankAccounts = pgTable(
     /** As printed on the statement — often masked. Identity is scoped to the workspace. */
     accountIdentifier: text("account_identifier").notNull(),
     accountType: text("account_type"),
+    /** A credit card is an account here too. `docs/decisions/0008` says why. */
+    accountKind: accountKindEnum("account_kind").notNull().default("BANK_ACCOUNT"),
+    /**
+     * ISO 4217, validated against `src/money/currencies.ts` before it is written.
+     *
+     * Deliberately `text` rather than an enum: adding a currency should be a code change
+     * with a test, not a migration. Set once, when the account is created, and never
+     * rewritten — canonical transactions carry their own currency, so changing this later
+     * would re-denominate movements already recorded against the account (Step 3a).
+     */
     currency: text("currency").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     // The lookup in upload-statement Step 3a never crosses a workspace, so neither does
     // this uniqueness.
-    uniqueIndex("bank_accounts_identity_idx").on(t.workspaceId, t.bankName, t.accountIdentifier),
+    //
+    // `accountKind` is deliberately NOT part of this. Two accounts are the same account
+    // because they share a workspace, a bank and an identifier; including the kind would let
+    // one account exist twice under two kinds, and since canonical transactions are keyed on
+    // `bankAccountId`, a split account silently defeats deduplication — the one failure
+    // Step 5a names as destroying a real payment.
+    //
+    // Matched case-insensitively, which is not fussiness. A model reading the same Axis
+    // statement twice returned "AXIS BANK" once and "Axis Bank" the next time, and a
+    // case-sensitive index made those two accounts for one real account — the same split,
+    // arrived at by a different route. Case is how a statement is typeset, never which
+    // account it is. `src/statements/account-identity.ts` holds the matching rule; it must
+    // agree with this index exactly, and `tests/db/invariants.test.ts` pins that.
+    uniqueIndex("bank_accounts_identity_idx").on(
+      t.workspaceId,
+      sql`lower(${t.bankName})`,
+      sql`upper(${t.accountIdentifier})`,
+    ),
   ],
 );
 
@@ -263,10 +294,21 @@ export const bankStatements = pgTable(
     identifiedBankName: text("identified_bank_name"),
     identifiedAccountIdentifier: text("identified_account_identifier"),
     identifiedAccountType: text("identified_account_type"),
+    identifiedAccountKind: accountKindEnum("identified_account_kind"),
+    /**
+     * The currency code the document gave, raw — including one we do not support.
+     *
+     * Kept unvalidated on purpose. A statement in NEEDS_ACCOUNT because its currency was
+     * unrecognised is only debuggable if what the model actually said survives; validating
+     * on the way in would discard the one piece of evidence worth having.
+     */
+    identifiedCurrency: text("identified_currency"),
     validationOutcome: validationOutcomeEnum("validation_outcome"),
     failureReason: text("failure_reason"),
     periodStart: date("period_start"),
     periodEnd: date("period_end"),
+    /** Null exactly when the period is. `docs/decisions/0008`. */
+    periodSource: periodSourceEnum("period_source"),
     openingBalance: bigint("opening_balance", { mode: "bigint" }),
     closingBalance: bigint("closing_balance", { mode: "bigint" }),
     totalCredits: bigint("total_credits", { mode: "bigint" }),

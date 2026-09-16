@@ -10,6 +10,8 @@
 
 import { randomUUID } from "node:crypto";
 
+import { eq } from "drizzle-orm";
+
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
@@ -154,6 +156,137 @@ describe("a statement waiting for its account", () => {
     expect(statement.bankAccountId).toBeNull();
     // What the document said survives independently of what it was bound to.
     expect(statement.identifiedBankName).toBe("HDFC Bank");
+  });
+
+  it("records no period source when it has no period", async () => {
+    // `docs/decisions/0008`: the two are null together. A source with no range says nothing,
+    // and a range with no source is a range coverage cannot weigh.
+    const [statement] = await h.db
+      .insert(bankStatements)
+      .values({
+        workspaceId,
+        uploadBatchId: randomUUID(),
+        filename: "no-period.pdf",
+        mimeType: "application/pdf",
+        storageRef: "workspaces/x/statements/y/no-period.pdf",
+        state: "PARSING" as const,
+        identifiedBankName: "Bank of Ireland",
+      })
+      .returning();
+
+    expect(statement.periodStart).toBeNull();
+    expect(statement.periodSource).toBeNull();
+  });
+});
+
+describe("an account and the kind of account it is", () => {
+  // spec: docs/decisions/0008-statement-period-provenance.md
+  it("is a bank account unless something says otherwise", async () => {
+    // The seeded account names no kind, the way every row written before this column
+    // existed named none. The default is what makes those rows still true.
+    const [account] = await h.db
+      .select()
+      .from(bankAccounts)
+      .where(eq(bankAccounts.id, bankAccountId));
+    expect(account.accountKind).toBe("BANK_ACCOUNT");
+  });
+
+  it("does not let the kind split one account into two", async () => {
+    await h.db.insert(bankAccounts).values({
+      workspaceId,
+      bankName: "ICICI Bank",
+      accountIdentifier: "XXXX9012",
+      accountKind: "BANK_ACCOUNT" as const,
+      currency: "INR",
+    });
+
+    /*
+     * The same workspace, bank and identifier is the same account, whatever kind it is
+     * called. `bank_accounts_identity_idx` deliberately excludes the kind: canonical
+     * transactions are keyed on `bankAccountId`, so an account existing twice would put a
+     * business's movements in two places and silently defeat the deduplication Step 5a
+     * calls the one failure that destroys a real payment.
+     */
+    await expectUniqueViolation(
+      () =>
+        h.db.insert(bankAccounts).values({
+          workspaceId,
+          bankName: "ICICI Bank",
+          accountIdentifier: "XXXX9012",
+          accountKind: "CREDIT_CARD" as const,
+          currency: "INR",
+        }),
+      "bank_accounts_identity_idx",
+    );
+  });
+
+  it("does not let the spelling of a bank name split one account into two", async () => {
+    await h.db.insert(bankAccounts).values({
+      workspaceId,
+      bankName: "AXIS BANK",
+      accountIdentifier: "921010042890365",
+      currency: "INR",
+    });
+
+    /*
+     * The observed bug. Identification reported "AXIS BANK" for one upload of a statement
+     * and "Axis Bank" for the next, and a case-sensitive index made those two accounts for
+     * one real account. Case is how a statement is typeset, not which account it is.
+     */
+    await expectUniqueViolation(
+      () =>
+        h.db.insert(bankAccounts).values({
+          workspaceId,
+          bankName: "Axis Bank",
+          accountIdentifier: "921010042890365",
+          currency: "INR",
+        }),
+      "bank_accounts_identity_idx",
+    );
+  });
+
+  it("does not let the case of a masked identifier split one account into two", async () => {
+    await h.db.insert(bankAccounts).values({
+      workspaceId,
+      bankName: "Yes Bank",
+      accountIdentifier: "XXXX4321",
+      currency: "INR",
+    });
+
+    // Banks print a mask both ways, sometimes on different pages of one statement.
+    await expectUniqueViolation(
+      () =>
+        h.db.insert(bankAccounts).values({
+          workspaceId,
+          bankName: "Yes Bank",
+          accountIdentifier: "xxxx4321",
+          currency: "INR",
+        }),
+      "bank_accounts_identity_idx",
+    );
+  });
+
+  it("still treats genuinely different banks as different accounts", async () => {
+    // The normalization folds typesetting, not identity. Deciding that "HDFC Bank" and
+    // "HDFC BANK LIMITED" are one institution is entity resolution, and a wrong merge is
+    // the expensive direction.
+    await h.db.insert(bankAccounts).values({
+      workspaceId,
+      bankName: "HDFC BANK LIMITED",
+      accountIdentifier: "50100158077633",
+      currency: "INR",
+    });
+    const [second] = await h.db
+      .insert(bankAccounts)
+      .values({
+        workspaceId,
+        bankName: "HDFC Bank",
+        accountIdentifier: "50100158077633",
+        currency: "INR",
+      })
+      .returning();
+
+    expect(second.id).toBeDefined();
   });
 });
 

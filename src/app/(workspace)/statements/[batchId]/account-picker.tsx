@@ -11,6 +11,7 @@
 
 import { useActionState } from "react";
 
+import { SUPPORTED_CURRENCIES } from "../../../../money/currencies";
 import { bindAccountAction, type BindFormState } from "../actions";
 import styles from "./page.module.css";
 
@@ -25,11 +26,13 @@ export function AccountPicker({
   accounts,
   suggestedBankName,
   suggestedAccountIdentifier,
+  suggestedCurrency,
 }: {
   statementId: string;
   accounts: Account[];
   suggestedBankName: string | null;
   suggestedAccountIdentifier: string | null;
+  suggestedCurrency: string | null;
 }) {
   const [state, action, pending] = useActionState<BindFormState, FormData>(bindAccountAction, {});
 
@@ -70,6 +73,25 @@ export function AccountPicker({
             defaultValue={suggestedAccountIdentifier ?? ""}
             placeholder="XXXX1234"
           />
+        </label>
+
+        {/*
+         * Asked, not assumed. An account's currency is permanent once set (Step 3a), so a
+         * default chosen for us is a decision nothing later can revisit. Where the document
+         * named a currency we support, that is the starting point; otherwise the user says.
+         */}
+        <label className={styles.field}>
+          <span className={styles.label}>Currency</span>
+          <select className={styles.select} name="currency" defaultValue={suggestedCurrency ?? ""}>
+            <option value="" disabled>
+              Choose a currency
+            </option>
+            {SUPPORTED_CURRENCIES.map((currency) => (
+              <option key={currency.code} value={currency.code}>
+                {currency.code} · {currency.name}
+              </option>
+            ))}
+          </select>
         </label>
       </div>
 

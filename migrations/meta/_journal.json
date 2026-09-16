@@ -22,6 +22,20 @@
       "when": 1789461456838,
       "tag": "0002_crazy_madame_masque",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1789545872443,
+      "tag": "0003_warm_marvel_apes",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789555913639,
+      "tag": "0004_absent_northstar",
+      "breakpoints": true
     }
   ]
 }

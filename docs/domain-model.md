@@ -86,12 +86,30 @@ Important conceptual attributes may include:
 - financial institution
 - currency
 - account type
+- account kind
+
+A credit card is modelled as a Bank Account with an account kind of `CREDIT_CARD`, rather
+than as a separate concept. A card holds an identifier, belongs to one Workspace, and
+produces Transactions that need supporting documents exactly as an account at a bank does;
+every relationship in this model would be duplicated verbatim for a second type. The kind
+is carried so that the places where a card genuinely differs — the direction of its
+balances, the meaning of a payment to it — can ask.
+
+The **currency** is established when the account is created and is not rewritten
+afterwards. Transactions record their own currency, so a later statement changing the
+account's would re-denominate movements already recorded against it. A statement that
+appears to disagree with its account's currency is a question for the user, not a
+correction to apply.
 
 ---
 
 ## 3.4 Bank Statement
 
 A document or dataset representing transactions from a Bank Account for a particular period.
+
+Both bank account statements and credit card statements are Bank Statements. A document
+that is neither — an invoice, a receipt, a tax document, a payslip — is not one, and is
+rejected rather than parsed.
 
 A Bank Statement is an input from which Muneem Ji obtains Transactions.
 
@@ -108,6 +126,14 @@ A Bank Statement may require parsing and/or processing before its Transactions b
 The statement period is **not optional**. Every successfully processed Bank Statement must
 record the date range it covers, because the system relies on that range to determine what
 it has and has not seen.
+
+That requirement binds at the end of processing, not at the start of it. Many statements
+declare no period — they carry a date of issue and nothing more. Such a statement is not
+rejected: it is processed, and its period is **derived** from the transactions it turns out
+to contain. What is recorded alongside the range is how it came to be known, because a
+derived range says only "we saw movements between these dates" where a declared one says
+"this is the window the bank accounted for". Coverage reporting must be able to tell the
+two apart. See `docs/decisions/0008-statement-period-provenance.md`.
 
 ### Statement Coverage
 
