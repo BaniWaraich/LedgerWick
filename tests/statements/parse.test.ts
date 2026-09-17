@@ -139,6 +139,7 @@ interface Harness {
 
 async function harness(
   options: {
+    reuse?: { scope: WorkspaceScope; accountId: string };
     body?: Uint8Array | string;
     filename?: string;
     mimeType?: string;
@@ -146,18 +147,29 @@ async function harness(
     currency?: string;
     bind?: boolean;
     state?: "PARSING" | "COMPLETED" | "NEEDS_ACCOUNT";
+    contentHash?: string;
     /** Point the row at bytes that are not there, as a lost blob would. */
     missingBytes?: boolean;
   } = {},
 ): Promise<Harness> {
-  const { user, workspace } = await seedWorkspace(h.db);
-  const scope = await openWorkspace(h.db, user.id, workspace.id);
+  let scope: WorkspaceScope;
+  let accountId: string;
 
-  const [account] = await scope.insert(bankAccounts, {
-    bankName: "HDFC Bank",
-    accountIdentifier: "XXXX1234",
-    currency: options.currency ?? "INR",
-  });
+  if (options.reuse) {
+    scope = options.reuse.scope;
+    accountId = options.reuse.accountId;
+  } else {
+    const { user, workspace } = await seedWorkspace(h.db);
+    scope = await openWorkspace(h.db, user.id, workspace.id);
+    const [created] = await scope.insert(bankAccounts, {
+      bankName: "HDFC Bank",
+      accountIdentifier: "XXXX1234",
+      currency: options.currency ?? "INR",
+    });
+    accountId = created.id;
+  }
+  const account = { id: accountId };
+  const workspace = { id: scope.workspaceId };
 
   const store = new FakeDocumentStore();
   const body = options.body ?? CSV;
@@ -175,6 +187,7 @@ async function harness(
     filename: options.filename ?? "august.csv",
     mimeType: options.mimeType ?? "text/csv",
     storageRef: options.missingBytes ? `${stored.key}-gone` : stored.key,
+    contentHash: options.contentHash ?? null,
     state: options.state ?? "PARSING",
     ...(options.declaredPeriod
       ? { periodStart: "2023-08-01", periodEnd: "2023-08-31", periodSource: "DECLARED" as const }
@@ -482,5 +495,105 @@ describe("workspace isolation", () => {
     expect((await theirs.statement()).state).toBe("PARSING");
     expect(await attacker.select(canonicalTransactions)).toHaveLength(0);
     expect(await theirs.scope.select(canonicalTransactions)).toHaveLength(0);
+  });
+});
+
+describe("the mapping is pinned to the document", () => {
+  /** The same file, mapped one way and then the other, as the model actually behaved. */
+  const OTHER: ColumnMapping = { ...MAPPING, descriptionColumns: [1, 2] };
+
+  it("reuses the mapping already derived for these exact bytes", async () => {
+    // Not an optimisation. description_normalized is part of canonical identity, so a model
+    // that answers differently on a second upload makes the same payment look like a
+    // different one.
+    const first = await harness({ contentHash: "sha-1" });
+    await first.run({ mapColumns: mappingOf(MAPPING).fn });
+
+    const second = await harness({
+      contentHash: "sha-1",
+      reuse: { scope: first.scope, accountId: first.accountId },
+    });
+    const model = mappingOf(OTHER);
+    await second.run({ mapColumns: model.fn });
+
+    // The model was never asked, so it could not answer differently.
+    expect(model.calls).toBe(0);
+    expect((await second.statement()).state).toBe("COMPLETED");
+  });
+
+  it("produces no new canonical transactions on a re-upload", async () => {
+    // The guarantee the whole phase rests on, and the one a wandering mapping broke: two
+    // uploads of one real ICICI statement created 212 transactions that already existed.
+    const first = await harness({ contentHash: "sha-2" });
+    await first.run({ mapColumns: mappingOf(MAPPING).fn });
+    const before = await first.scope.select(canonicalTransactions);
+
+    const second = await harness({
+      contentHash: "sha-2",
+      reuse: { scope: first.scope, accountId: first.accountId },
+    });
+    await second.run({ mapColumns: mappingOf(OTHER).fn });
+
+    const after = await first.scope.select(canonicalTransactions);
+    expect(after).toHaveLength(before.length);
+    expect(await second.scope.select(statementLines)).toHaveLength(4);
+  });
+
+  it("asks the model for a document it has not seen", async () => {
+    const first = await harness({ contentHash: "sha-3" });
+    await first.run({ mapColumns: mappingOf(MAPPING).fn });
+
+    const different = await harness({
+      contentHash: "sha-DIFFERENT",
+      reuse: { scope: first.scope, accountId: first.accountId },
+    });
+    const model = mappingOf(MAPPING);
+    await different.run({ mapColumns: model.fn });
+
+    expect(model.calls).toBe(1);
+  });
+
+  it("asks the model when the statement has no digest at all", async () => {
+    const t = await harness();
+    const model = mappingOf(MAPPING);
+    await t.run({ mapColumns: model.fn });
+
+    expect(model.calls).toBe(1);
+  });
+
+  it("never inherits another workspace's mapping", async () => {
+    // Scoped like every other read. Two workspaces may hold the same document; neither may
+    // see the other's anything.
+    const theirs = await harness({ contentHash: "shared-bytes" });
+    await theirs.run({ mapColumns: mappingOf(MAPPING).fn });
+
+    const ours = await harness({ contentHash: "shared-bytes" });
+    const model = mappingOf(MAPPING);
+    await ours.run({ mapColumns: model.fn });
+
+    expect(model.calls).toBe(1);
+  });
+
+  it("falls back to the model when the stored mapping no longer fits its schema", async () => {
+    const first = await harness({ contentHash: "sha-legacy" });
+    await first.run({ mapColumns: mappingOf(MAPPING).fn });
+
+    // A column that has held earlier shapes. It should send the statement back to the model
+    // rather than crash the walk.
+    await first.scope.update(
+      bankStatements,
+      { columnMapping: { mapping: { dateColumn: "not a number" } } },
+      eq(bankStatements.id, first.statementId),
+    );
+
+    const second = await harness({
+      contentHash: "sha-legacy",
+      reuse: { scope: first.scope, accountId: first.accountId },
+    });
+    const model = mappingOf(MAPPING);
+    await second.run({ mapColumns: model.fn });
+
+    expect(model.calls).toBe(1);
+    expect((await second.statement()).state).toBe("COMPLETED");
   });
 });

@@ -31,10 +31,12 @@
 
 import { eq } from "drizzle-orm";
 
+import { and, isNotNull, ne } from "drizzle-orm";
+
 import { bankAccounts, bankStatements, statementLines } from "../db/schema";
 import type { WorkspaceScope } from "../db/workspace-scope";
 import { currencyFor, type Currency } from "../money/currencies";
-import type { ColumnMapping } from "../ai/prompts/map-statement-columns.v1";
+import { columnMappingSchema, type ColumnMapping } from "../ai/prompts/map-statement-columns.v1";
 import type { DocumentStore } from "../storage/document-store";
 import type { Grid } from "./csv";
 import type { MapColumns, ReadScanned } from "./parse-contracts";
@@ -137,7 +139,7 @@ export async function parseStatement(
 
   const attempt =
     source.path === "TEXT"
-      ? await readAsText(deps, source.grid, currency)
+      ? await readAsText(deps, source.grid, currency, await pinnedMapping(scope, statement))
       : await readAsScan(deps, source.bytes, currency);
 
   if (!attempt) {
@@ -196,7 +198,24 @@ async function readAsText(
   deps: ParseDependencies,
   grid: Grid,
   currency: Currency,
+  pinned: ColumnMapping | null,
 ): Promise<Attempt | null> {
+  /*
+   * The same bytes were mapped before, so they are mapped that way again.
+   *
+   * Not an optimisation, though it is one. `description_normalized` is part of canonical
+   * identity, and the mapping decides what a description says -- so a model that answers
+   * differently on a second upload makes the same payment look like a different one. Two
+   * uploads of one ICICI statement chose different description columns and created 212
+   * duplicate transactions. Re-deriving is skipped too: a mapping that already reconciled
+   * has nothing to gain from a second opinion.
+   */
+  if (pinned) {
+    const walk = walkStatement(grid, pinned, currency);
+    const balances = balancesFromGrid(grid, pinned, walk.lines, currency);
+    return { walk, balances, validation: validate(walk.lines, balances), mapping: pinned };
+  }
+
   const first = await attemptText(deps, grid, currency, undefined);
   if (!first) return null;
   if (first.validation.outcome === "VALID") return first;
@@ -245,6 +264,38 @@ async function readAsScan(
   const balances = balancesFromScanned(read.value, walk.lines, currency);
 
   return { walk, balances, validation: validate(walk.lines, balances), mapping: null };
+}
+
+/**
+ * The mapping this workspace already derived for these exact bytes, if it has.
+ *
+ * Scoped like every other read, so one workspace can never inherit another's mapping. The
+ * stored value is validated through the schema rather than trusted: it is JSON from a column
+ * that has held earlier shapes, and a mapping that no longer fits should send the statement
+ * back to the model rather than crash the walk.
+ */
+async function pinnedMapping(
+  scope: WorkspaceScope,
+  statement: { id: string; contentHash: string | null },
+): Promise<ColumnMapping | null> {
+  if (!statement.contentHash) return null;
+
+  const earlier = await scope.select(
+    bankStatements,
+    and(
+      eq(bankStatements.contentHash, statement.contentHash),
+      ne(bankStatements.id, statement.id),
+      isNotNull(bankStatements.columnMapping),
+    ),
+  );
+
+  for (const previous of earlier) {
+    const stored = (previous.columnMapping as { mapping?: unknown } | null)?.mapping;
+    const parsed = columnMappingSchema.safeParse(stored);
+    if (parsed.success) return parsed.data;
+  }
+
+  return null;
 }
 
 /** What to tell the model about the attempt that did not reconcile. */

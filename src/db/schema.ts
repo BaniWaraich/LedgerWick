@@ -316,12 +316,29 @@ export const bankStatements = pgTable(
     lineCount: integer("line_count"),
     /** The column mapping a model inferred, kept for debugging a bad parse. ADR 0003. */
     columnMapping: jsonb("column_mapping"),
+    /**
+     * A digest of the bytes, so the same document is recognisable as the same document.
+     *
+     * Its job is to keep canonical identity stable. The mapping is a model's answer and the
+     * model does not always give the same one: two uploads of one ICICI statement chose
+     * different description columns, 16% of the rows came out with different descriptions,
+     * and since `description_normalized` is part of
+     * `canonical_transactions_identity_idx` the second upload created 212 transactions that
+     * already existed. Re-uploading a file now reuses the mapping already derived for those
+     * exact bytes, so the descriptions are identical and deduplication holds.
+     *
+     * Not unique: the same statement may legitimately be uploaded twice, and that is the
+     * case this exists to make safe.
+     */
+    contentHash: text("content_hash"),
     uploadedAt: timestamp("uploaded_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     index("bank_statements_workspace_idx").on(t.workspaceId),
     index("bank_statements_batch_idx").on(t.workspaceId, t.uploadBatchId),
     index("bank_statements_coverage_idx").on(t.bankAccountId, t.periodStart, t.periodEnd),
+    // The lookup that reuses a mapping: this workspace's earlier copy of these exact bytes.
+    index("bank_statements_content_idx").on(t.workspaceId, t.contentHash),
   ],
 );
 

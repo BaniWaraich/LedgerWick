@@ -11,7 +11,7 @@
  * and the isolation tests can attack this directly.
  */
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { eq } from "drizzle-orm";
 
@@ -99,8 +99,13 @@ async function intakeFile(
   const id = randomUUID();
   const key = documentKey(scope.workspaceId, "statements", id, file.name);
   const contentType = file.type === "" ? "application/octet-stream" : file.type;
+  const bytes = Buffer.from(await file.arrayBuffer());
 
-  const stored = await store.put(key, Buffer.from(await file.arrayBuffer()), contentType);
+  // Computed here because this is the only place that holds the bytes in a request, and it
+  // is what lets parsing recognise a re-upload and reuse its mapping (see `schema.ts`).
+  const contentHash = createHash("sha256").update(bytes).digest("hex");
+
+  const stored = await store.put(key, bytes, contentType);
 
   const accepted = isAcceptable(file);
   const [statement] = await scope.insert(bankStatements, {
@@ -109,6 +114,7 @@ async function intakeFile(
     filename: file.name,
     mimeType: contentType,
     storageRef: stored.key,
+    contentHash,
     // UPLOADING is honest for the moment between this row existing and the workflow
     // picking it up; identification moves it to IDENTIFYING.
     state: accepted ? "UPLOADING" : "FAILED",

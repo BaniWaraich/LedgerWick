@@ -43,6 +43,13 @@
       "when": 1789639052497,
       "tag": "0005_smooth_felicia_hardy",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789647464487,
+      "tag": "0006_clever_spitfire",
+      "breakpoints": true
     }
   ]
 }
