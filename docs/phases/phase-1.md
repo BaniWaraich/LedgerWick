@@ -368,16 +368,23 @@ financial movement appears exactly once.
 
 **Dependencies.** C.
 
-**Complete when.** The binary invariants and the measured thresholds in
-`docs/parsing-acceptance.md` all hold, and **six consecutive unseen statements have parsed
-correctly on first attempt with no code change between them**.
+**Complete when.** The binary invariants in `docs/parsing-acceptance.md` hold and the
+workflow runs end to end on real statements: re-uploading produces zero new canonical
+transactions, overlapping statements produce one transaction with two lines, validation
+sets `VALID` or `DISCREPANCY`, a scanned mismatch is never retried into acceptance, a
+mapping failing its schema fails the statement, and coverage is recorded.
 
-That document replaces what this section said before, which was that mapping accuracy be
-"measured at least once". Measuring once is an activity rather than a bar, and it was
-satisfied while the parser was dropping 71% of a real statement — the suite was green
-throughout, because this feature has two kinds of correctness and tests only demonstrate
-one of them. `0003` stakes the whole design on a statement it has never seen being parsed
-correctly, and the only evidence for that is how often it is not.
+**Quality is a separate bar, and it does not gate this feature.** `0003` stakes the whole
+design on a statement nobody has written a parser for being read correctly, and the only
+evidence for that is how often it is not — a statistical property no test suite settles.
+That bar is six consecutive unseen statements parsed correctly on first attempt, it is
+earned across the rest of the phase rather than before E starts, and it is a condition of
+**Phase 1** closing rather than of D closing. `docs/parsing-acceptance.md` holds the
+criteria and the log; `BAN-146` is the standing prompt.
+
+What this section said before was that mapping accuracy be "measured at least once".
+Measuring once is an activity rather than a bar, and it was satisfied while the parser was
+dropping 71% of a real statement with the suite green throughout.
 
 ---
 
@@ -666,3 +673,7 @@ Excel reconciliation showing every transaction, its status, and a link to its do
 
 Then they upload three more months, overlapping the first, and nothing duplicates, nothing is asked
 twice, and only genuinely new payments appear in the queue.
+
+And the parser has earned the streak in `docs/parsing-acceptance.md` — six consecutive unseen
+statements read correctly on first attempt. Phase 1 is not complete on a parser that has only
+ever been right about documents it was repaired against.

@@ -103,10 +103,21 @@ Across the fixture corpus, recorded with the run that produced them.
 
 ---
 
-## The release bar
+## Two bars, because there are two kinds of done
 
-**Feature D is done when six consecutive unseen statements parse correctly on first
-attempt, with no code change between them.**
+Feature D's functionality and feature D's quality finish at different times, and holding the
+feature open until both are settled would stop the phase dead. So they are separated.
+
+### Feature D is complete when its functional bar is met
+
+The binary invariants above all hold, the workflow runs end to end on real documents, and
+the summary and the transactions list show what the statement says. That is a decidable
+condition, it is met, and it is what unblocks feature E.
+
+### Phase 1 does not close until the streak is earned
+
+**Six consecutive unseen statements parse correctly on first attempt, with no code change
+between them.**
 
 Not a count of statements tested. A count of statements that taught us nothing — which is
 the only observable sign that the discovery rate has fallen, and therefore the only evidence
@@ -115,8 +126,18 @@ that the next one is likely to work.
 A failure resets the streak. That is the point: it means the population still holds
 surprises, and six in a row is the claim that it mostly does not.
 
-At the failure rate seen so far this implies a corpus well beyond the minimum below. That is
-the honest cost of the claim `0003` makes.
+The streak is earned **while E through L are built**, not before them. Statements are fed in
+one at a time across the rest of the phase, each one's first impression recorded here.
+`BAN-146` is the standing prompt to keep doing it.
+
+This is a deliberate trade and it has a cost worth naming: features built on D will be built
+on descriptions and transactions that are still moving. E matches on vendor and date, so a
+parsing fix can change what E sees. The alternative — holding the phase still until parsing
+is proven — costs more, but the risk is real and belongs on the record rather than in
+someone's head.
+
+If the streak has not been reached by the time L ships, that is a finding about `0003`'s
+central claim and deserves a decision, not a quiet relaxation of the number.
 
 ### Corpus minimum
 
