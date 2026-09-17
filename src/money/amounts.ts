@@ -69,8 +69,21 @@ const LEADING_MARKER = /^(DR|CR)\.?(?![A-Z])/i;
 /** A spelled-out currency and the full stop that abbreviates it: `Rs.`, `INR`, `AED`. */
 const ABBREVIATION = /[A-Za-z]+\.?/g;
 
-/** Everything that is not a digit or a separator: symbols, spaces of every width. */
-const NOISE = /[^0-9.,]/g;
+/**
+ * What may be discarded from an amount: currency symbols and spaces of every width.
+ *
+ * A whitelist rather than "everything that is not a digit", which is what this was, and
+ * which was wrong in a way only the scanned path would have shown. Stripping any unknown
+ * character means `1,87,4??.00` loses its two question marks and parses cleanly as 1874.00
+ * -- a garbled transcription turned into a confident wrong number, on the one path where
+ * `docs/decisions/0003` says there is no deterministic layer to catch a misread digit.
+ *
+ * Anything left after this that is not a digit or a separator refuses the cell instead.
+ */
+const DISCARDABLE = /[\s\u00a0\u2007\u2009\u202f₹$€£¥₨﷼¢'`]/g;
+
+/** What a cell must consist of, once the discardable characters are gone. */
+const ONLY_DIGITS_AND_SEPARATORS = /^[0-9.,]+$/;
 
 /**
  * Read one amount cell, or decline to.
@@ -122,8 +135,8 @@ export function readAmount(
   // Words go first, and they take their own full stop with them. `Rs. 4,850.00` otherwise
   // keeps the stop after `Rs`, arrives here as `.4850.00`, and is refused for having two
   // decimal points — a rupee sign spelled out is not a malformed amount.
-  const cleaned = rest.replace(ABBREVIATION, " ").replace(NOISE, "");
-  if (!/[0-9]/.test(cleaned)) return null;
+  const cleaned = rest.replace(ABBREVIATION, " ").replace(DISCARDABLE, "");
+  if (!ONLY_DIGITS_AND_SEPARATORS.test(cleaned)) return null;
 
   const grouping = decimalSeparator === "." ? "," : ".";
   const ungrouped = cleaned.split(grouping).join("");

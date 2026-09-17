@@ -173,4 +173,19 @@ describe("declining to read", () => {
   it("returns null for a bare marker with no amount behind it", () => {
     expect(minor("Cr")).toBeNull();
   });
+
+  it("refuses a cell with a character it does not recognise", () => {
+    // Found while testing the scanned path. Discarding anything non-numeric turned a
+    // garbled transcription into a confident wrong number -- `1,87,4??.00` lost its two
+    // question marks and parsed cleanly as 1874.00, on the one path where ADR 0003 says
+    // there is no deterministic layer beneath to catch a misread digit.
+    expect(minor("1,87,4??.00")).toBeNull();
+    expect(minor("4,850.00 *")).toBeNull();
+    expect(minor("48#50.00")).toBeNull();
+  });
+
+  it("still discards the currency symbols and spaces that are only decoration", () => {
+    expect(minor("₹4,850.00")).toBe(485000n);
+    expect(minor("₨ 4,850.00")).toBe(485000n);
+  });
 });
