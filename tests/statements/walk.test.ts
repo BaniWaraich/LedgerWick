@@ -1,0 +1,277 @@
+import { describe, expect, it } from "vitest";
+
+import type { ColumnMapping } from "../../src/ai/prompts/map-statement-columns.v1";
+import { currencyFor } from "../../src/money/currencies";
+import { walkStatement } from "../../src/statements/walk";
+
+const INR = currencyFor("INR")!;
+
+/** A debit/credit statement: date, narration, reference, withdrawal, deposit, balance. */
+const PAIRED: ColumnMapping = {
+  headerRow: 0,
+  firstDataRow: 1,
+  dateColumn: 0,
+  dateOrder: "DMY",
+  descriptionColumns: [1],
+  referenceColumn: 2,
+  balanceColumn: 5,
+  amountShape: "DEBIT_CREDIT",
+  debitColumn: 3,
+  creditColumn: 4,
+  amountColumn: null,
+  indicatorColumn: null,
+  decimalSeparator: ".",
+  openingBalanceCell: null,
+  closingBalanceCell: null,
+};
+
+const HEADER = ["Date", "Narration", "Ref", "Withdrawal", "Deposit", "Balance"];
+
+function walk(rows: string[][], mapping: ColumnMapping = PAIRED) {
+  return walkStatement([HEADER, ...rows], mapping, INR);
+}
+
+describe("walking a debit and credit statement", () => {
+  it("reads a withdrawal", () => {
+    const { lines } = walk([["01/08/2023", "ACME TRADING", "REF1", "4,850.00", "", "1,20,000.00"]]);
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
+      valueDate: "2023-08-01",
+      description: "ACME TRADING",
+      amountMinor: 485000n,
+      direction: "DEBIT",
+      balanceMinor: 12000000n,
+      externalReference: "REF1",
+    });
+  });
+
+  it("reads a deposit", () => {
+    const { lines } = walk([["01/08/2023", "SALARY", "", "", "50,000.00", "1,70,000.00"]]);
+    expect(lines[0]).toMatchObject({ amountMinor: 5000000n, direction: "CREDIT" });
+  });
+
+  it("treats a zero in the unused column as empty", () => {
+    // Plenty of banks write 0.00 rather than leaving the cell blank.
+    const { lines } = walk([["01/08/2023", "ACME", "", "4,850.00", "0.00", "1,20,000.00"]]);
+    expect(lines[0]).toMatchObject({ amountMinor: 485000n, direction: "DEBIT" });
+  });
+
+  it("skips a row where both columns are filled", () => {
+    // Not a transaction with two amounts: a sign that one of these columns is something
+    // else, most often the running balance, which every row fills.
+    const { lines, skipped } = walk([["01/08/2023", "ACME", "", "4,850.00", "50.00", "1,20,000"]]);
+    expect(lines).toHaveLength(0);
+    expect(skipped[0].reason).toBe("both a debit and a credit");
+  });
+
+  it("records a negative balance for an overdrawn account", () => {
+    const { lines } = walk([["01/08/2023", "ACME", "", "4,850.00", "", "(1,200.00)"]]);
+    expect(lines[0].balanceMinor).toBe(-120000n);
+  });
+
+  it("carries the row's own index, so a bad line is traceable to the file", () => {
+    const { lines } = walk([
+      ["01/08/2023", "A", "", "1.00", "", ""],
+      ["02/08/2023", "B", "", "2.00", "", ""],
+    ]);
+    expect(lines.map((line) => line.rowIndex)).toEqual([1, 2]);
+  });
+});
+
+describe("the rows a statement holds that are not transactions", () => {
+  it("skips a repeated header and counts it", () => {
+    // Between transactions sit repeated page headers, footers, totals and advertising. The
+    // walk has no list of those -- a list would be a per-bank parser by another name.
+    const { lines, skipped } = walk([
+      ["01/08/2023", "ACME", "", "4,850.00", "", "1,20,000.00"],
+      HEADER,
+      ["02/08/2023", "BETA", "", "1,000.00", "", "1,19,000.00"],
+    ]);
+
+    expect(lines).toHaveLength(2);
+    expect(skipped).toEqual([{ rowIndex: 2, reason: "no date" }]);
+  });
+
+  it("skips a carried-forward line, which has a date and no amount", () => {
+    const { lines, skipped } = walk([
+      ["01/08/2023", "B/F BROUGHT FORWARD", "", "", "", "1,20,000.00"],
+      ["02/08/2023", "ACME", "", "4,850.00", "", "1,15,150.00"],
+    ]);
+
+    expect(lines).toHaveLength(1);
+    expect(skipped).toEqual([{ rowIndex: 1, reason: "no amount" }]);
+  });
+
+  it("skips an empty row", () => {
+    const { lines, skipped } = walk([["", "", "", "", "", ""]]);
+    expect(lines).toHaveLength(0);
+    expect(skipped).toHaveLength(1);
+  });
+
+  it("counts every skip, because a wrong mapping skips almost everything", () => {
+    // The evidence that matters. A subtly wrong mapping does not throw; it produces a walk
+    // with four transactions in it, and a silent skip would hide that entirely.
+    const wrong = { ...PAIRED, dateColumn: 1 };
+    const { lines, skipped } = walk(
+      [
+        ["01/08/2023", "ACME", "", "4,850.00", "", "1,20,000.00"],
+        ["02/08/2023", "BETA", "", "1,000.00", "", "1,19,000.00"],
+      ],
+      wrong,
+    );
+
+    expect(lines).toHaveLength(0);
+    expect(skipped).toHaveLength(2);
+  });
+});
+
+describe("a single amount column carrying its own sign", () => {
+  const signedMapping: ColumnMapping = {
+    ...PAIRED,
+    amountShape: "SIGNED_AMOUNT",
+    debitColumn: null,
+    creditColumn: null,
+    amountColumn: 3,
+  };
+
+  it("reads a minus as money out", () => {
+    const { lines } = walk([["01/08/2023", "ACME", "", "-4,850.00", "", ""]], signedMapping);
+    expect(lines[0]).toMatchObject({ amountMinor: 485000n, direction: "DEBIT" });
+  });
+
+  it("reads brackets as money out", () => {
+    const { lines } = walk([["01/08/2023", "ACME", "", "(4,850.00)", "", ""]], signedMapping);
+    expect(lines[0].direction).toBe("DEBIT");
+  });
+
+  it("reads a Dr printed inside the amount cell", () => {
+    const { lines } = walk([["01/08/2023", "ACME", "", "4,850.00 Dr", "", ""]], signedMapping);
+    expect(lines[0].direction).toBe("DEBIT");
+  });
+
+  it("reads an unsigned value as money in", () => {
+    // What an unsigned number in a signed column means arithmetically. If the mapping is
+    // wrong about this, the balance check is what says so.
+    const { lines } = walk([["01/08/2023", "SALARY", "", "50,000.00", "", ""]], signedMapping);
+    expect(lines[0].direction).toBe("CREDIT");
+  });
+});
+
+describe("an amount column with a separate indicator", () => {
+  const indicated: ColumnMapping = {
+    ...PAIRED,
+    amountShape: "AMOUNT_WITH_INDICATOR",
+    debitColumn: null,
+    creditColumn: null,
+    amountColumn: 3,
+    indicatorColumn: 4,
+  };
+
+  it("reads Dr and Cr", () => {
+    const { lines } = walk(
+      [
+        ["01/08/2023", "ACME", "", "4,850.00", "Dr", ""],
+        ["02/08/2023", "SALARY", "", "50,000.00", "Cr", ""],
+      ],
+      indicated,
+    );
+    expect(lines.map((line) => line.direction)).toEqual(["DEBIT", "CREDIT"]);
+  });
+
+  it("reads however the bank abbreviates it", () => {
+    // The same column is written Dr, DR, D, Debit and Dr. by different banks, and
+    // occasionally by one bank on different pages.
+    const rows = [
+      ["01/08/2023", "A", "", "1.00", "DR", ""],
+      ["02/08/2023", "B", "", "1.00", "D", ""],
+      ["03/08/2023", "C", "", "1.00", "Debit", ""],
+      ["04/08/2023", "D", "", "1.00", "credit", ""],
+      ["05/08/2023", "E", "", "1.00", "+", ""],
+    ];
+    const { lines } = walk(rows, indicated);
+    expect(lines.map((line) => line.direction)).toEqual([
+      "DEBIT",
+      "DEBIT",
+      "DEBIT",
+      "CREDIT",
+      "CREDIT",
+    ]);
+  });
+
+  it("falls back to the amount cell when the indicator is not one it knows", () => {
+    const { lines } = walk([["01/08/2023", "A", "", "-1.00", "???", ""]], indicated);
+    expect(lines[0].direction).toBe("DEBIT");
+  });
+});
+
+describe("the reference column", () => {
+  it("keeps a real reference", () => {
+    const { lines } = walk([["01/08/2023", "A", "N155180555427618", "1.00", "", ""]]);
+    expect(lines[0].externalReference).toBe("N155180555427618");
+  });
+
+  it("discards a placeholder of zeros", () => {
+    // Not untidiness -- a serious bug. canonical_transactions_reference_idx makes a
+    // reference identity on its own, so a hundred rows sharing one placeholder would
+    // collapse into a single transaction: the false merge Step 5a calls the failure that
+    // silently destroys a real payment.
+    const { lines } = walk([
+      ["01/08/2023", "A", "000000000000000", "1.00", "", ""],
+      ["02/08/2023", "B", "000000000000000", "2.00", "", ""],
+      ["03/08/2023", "C", "-", "3.00", "", ""],
+      ["04/08/2023", "D", "", "4.00", "", ""],
+    ]);
+    expect(lines.map((line) => line.externalReference)).toEqual([null, null, null, null]);
+  });
+});
+
+describe("the description", () => {
+  it("joins the columns the mapping names, in order", () => {
+    const split = { ...PAIRED, descriptionColumns: [1, 2], referenceColumn: null };
+    const { lines } = walk([["01/08/2023", "UPI", "ACME TRADING", "1.00", "", ""]], split);
+    expect(lines[0].description).toBe("UPI ACME TRADING");
+  });
+
+  it("collapses the whitespace a PDF leaves in it", () => {
+    const { lines } = walk([["01/08/2023", "ACME   TRADING\n MUMBAI", "", "1.00", "", ""]]);
+    expect(lines[0].description).toBe("ACME TRADING MUMBAI");
+  });
+
+  it("skips a description column that is empty on this row", () => {
+    const split = { ...PAIRED, descriptionColumns: [1, 2], referenceColumn: null };
+    const { lines } = walk([["01/08/2023", "", "ACME", "1.00", "", ""]], split);
+    expect(lines[0].description).toBe("ACME");
+  });
+});
+
+describe("where the walk starts", () => {
+  it("begins at the row the mapping names and not before", () => {
+    const { lines } = walk(
+      [
+        ["01/08/2023", "TITLE ROW THAT LOOKS LIKE DATA", "", "9.99", "", ""],
+        ["02/08/2023", "ACME", "", "1.00", "", ""],
+      ],
+      { ...PAIRED, firstDataRow: 2 },
+    );
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0].description).toBe("ACME");
+  });
+
+  it("survives a mapping that points past the end of the grid", () => {
+    expect(
+      walk([["01/08/2023", "A", "", "1.00", "", ""]], { ...PAIRED, firstDataRow: 99 }),
+    ).toEqual({ lines: [], skipped: [] });
+  });
+
+  it("survives a mapping naming a column the grid does not have", () => {
+    const { lines, skipped } = walk([["01/08/2023", "A", "", "1.00", "", ""]], {
+      ...PAIRED,
+      debitColumn: 42,
+      creditColumn: 43,
+    });
+    expect(lines).toHaveLength(0);
+    expect(skipped[0].reason).toBe("no amount");
+  });
+});
