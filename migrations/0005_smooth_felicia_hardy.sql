@@ -1,0 +1,1 @@
+ALTER TABLE "statement_lines" ADD COLUMN "external_reference" text;

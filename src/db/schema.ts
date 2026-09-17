@@ -347,6 +347,21 @@ export const statementLines = pgTable(
     amountMinor: bigint("amount_minor", { mode: "bigint" }).notNull(),
     direction: directionEnum("direction").notNull(),
     balanceMinor: bigint("balance_minor", { mode: "bigint" }),
+    /**
+     * The bank's own reference for this row — a UTR, a cheque number — as printed.
+     *
+     * Deliberately NOT unique here, unlike its counterpart on `canonical_transactions`.
+     * Two overlapping statements both printing one UTR produce two of these rows and one
+     * canonical transaction, which is the whole point of this table being evidence rather
+     * than identity.
+     *
+     * It has to live on the line as well as on the transaction. Promotion runs in a
+     * background workflow that may run twice, and it recovers by re-reading these rows —
+     * so a reference held only in memory would be lost on a retry, and Step 5a's rule that
+     * a reference decides identity on its own would silently stop applying to exactly the
+     * statements that had already failed once.
+     */
+    externalReference: text("external_reference"),
     canonicalTransactionId: uuid("canonical_transaction_id").references(
       () => canonicalTransactions.id,
       { onDelete: "set null" },
