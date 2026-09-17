@@ -23,9 +23,6 @@ import { readCsvGrid, type Grid } from "./csv";
 import { gridFromItems } from "./pdf-grid";
 import type { PdfText } from "./pdf-text";
 
-/** Which of ADR 0003's two paths this document takes. */
-export type ParsingPath = "TEXT" | "SCANNED";
-
 /**
  * Pulling the text out of a PDF, as this module needs it.
  *
