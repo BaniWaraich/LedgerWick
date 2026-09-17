@@ -13,6 +13,8 @@
 
 import { randomUUID } from "node:crypto";
 
+import { eq } from "drizzle-orm";
+
 import { bankStatements } from "../db/schema";
 import type { WorkspaceScope } from "../db/workspace-scope";
 import type { DocumentStore } from "../storage/document-store";
@@ -42,6 +44,16 @@ const ACCEPTED_EXTENSIONS = /\.(pdf|csv)$/i;
 const UNSUPPORTED_FORMAT =
   "We can only read PDF and CSV statements. Export this one as a PDF or CSV and try again.";
 const COULD_NOT_STORE = "We couldn't save this file. Please try uploading it again.";
+/*
+ * The bytes are stored and the row exists, but nothing was told to process it.
+ *
+ * Deliberately about us rather than about their document, like the equivalent in
+ * `identify.ts`: the statement is perfectly good and the queue was unreachable. The file
+ * stays stored -- the definition of done forbids automated deletion -- so re-uploading is a
+ * cheap and honest instruction rather than a lossy one.
+ */
+const COULD_NOT_START =
+  "We saved this file but couldn't start processing it. Please try uploading it again.";
 
 function isAcceptable(file: File): boolean {
   return ACCEPTED_MIME_TYPES.has(file.type) || ACCEPTED_EXTENSIONS.test(file.name);
@@ -111,6 +123,15 @@ async function intakeFile(
   };
 }
 
+/** Record a failure as state. `§15`: failures are state, never silently discarded. */
+async function fail(scope: WorkspaceScope, statementId: string, reason: string): Promise<void> {
+  await scope.update(
+    bankStatements,
+    { state: "FAILED", failureReason: reason },
+    eq(bankStatements.id, statementId),
+  );
+}
+
 /**
  * Take in one upload batch.
  *
@@ -139,11 +160,34 @@ export async function intakeBatch(
       result = { statementId: null, filename: file.name, accepted: false, reason: COULD_NOT_STORE };
     }
 
-    results.push(result);
-
     // Sent per file, so identification of one statement cannot be delayed or skipped by
-    // another. A send that fails leaves the row in UPLOADING rather than losing the file.
-    if (result.accepted && result.statementId) await publish(result.statementId);
+    // another.
+    if (result.accepted && result.statementId) {
+      try {
+        await publish(result.statementId);
+      } catch {
+        /*
+         * The queue refused the event. This used to be left outside the try, on the
+         * reasoning that a failed send "leaves the row in UPLOADING rather than losing the
+         * file" -- but UPLOADING is a dead end. Nothing retries it, the polling screen spins
+         * on it forever, and the throw escaped this loop, so the rest of the batch was never
+         * processed either. Both halves break §11's rule that files in one batch reach their
+         * outcomes independently.
+         *
+         * So the failure becomes state, as `§15` requires of every failure, and the loop
+         * carries on to the next file.
+         */
+        await fail(scope, result.statementId, COULD_NOT_START);
+        result = {
+          statementId: result.statementId,
+          filename: result.filename,
+          accepted: false,
+          reason: COULD_NOT_START,
+        };
+      }
+    }
+
+    results.push(result);
   }
 
   return { uploadBatchId, results };

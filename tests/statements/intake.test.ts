@@ -194,3 +194,84 @@ describe("a batch", () => {
     expect(sent).toHaveLength(1);
   });
 });
+
+describe("when the queue cannot be reached", () => {
+  /** A publisher that refuses, the way `inngest.send` does with no dev server listening. */
+  function refusing(failFor?: string) {
+    const sent: string[] = [];
+    return {
+      sent,
+      publish: async (id: string) => {
+        if (failFor && !id.includes(failFor)) {
+          sent.push(id);
+          return;
+        }
+        throw new TypeError("fetch failed");
+      },
+    };
+  }
+
+  it("records the failure as state instead of leaving the row in UPLOADING", async () => {
+    // Found in the wild. With the send outside the try, three real uploads left three rows
+    // sitting in UPLOADING that nothing would ever pick up, while the batch screen polled
+    // them forever. `§15`: a failure is state, never silently discarded.
+    const store = new FakeDocumentStore();
+    const { publish } = refusing();
+
+    const { uploadBatchId, results } = await intakeBatch(scope, store, [csv()], publish);
+
+    const [row] = await scope.select(
+      bankStatements,
+      eq(bankStatements.uploadBatchId, uploadBatchId),
+    );
+    expect(row.state).toBe("FAILED");
+    expect(row.failureReason).toContain("couldn't start processing it");
+    expect(results[0].accepted).toBe(false);
+  });
+
+  it("keeps the file, because the document was never the problem", async () => {
+    // The definition of done forbids automated deletion, and re-uploading is only honest
+    // advice if the original survived.
+    const store = new FakeDocumentStore();
+    const { publish } = refusing();
+
+    const { uploadBatchId } = await intakeBatch(scope, store, [csv()], publish);
+
+    const [row] = await scope.select(
+      bankStatements,
+      eq(bankStatements.uploadBatchId, uploadBatchId),
+    );
+    expect(await store.head(row.storageRef)).not.toBeNull();
+  });
+
+  it("still processes the rest of the batch", async () => {
+    // §11: files in one batch reach their outcomes independently. The throw used to escape
+    // the loop, so one unreachable queue meant the later files were never even stored.
+    const store = new FakeDocumentStore();
+    const { publish } = refusing("never-matches-anything");
+
+    const { uploadBatchId, results } = await intakeBatch(
+      scope,
+      store,
+      [csv("first.csv"), csv("second.csv"), csv("third.csv")],
+      publish,
+    );
+
+    expect(results).toHaveLength(3);
+    expect(results.map((r) => r.filename)).toEqual(["first.csv", "second.csv", "third.csv"]);
+    expect(
+      await scope.select(bankStatements, eq(bankStatements.uploadBatchId, uploadBatchId)),
+    ).toHaveLength(3);
+  });
+
+  it("does not fail the whole request", async () => {
+    // The throw reached the route, which returned a 500 with an HTML error page -- which the
+    // upload screen then reported as "we couldn't reach the server".
+    const store = new FakeDocumentStore();
+    const { publish } = refusing();
+
+    await expect(intakeBatch(scope, store, [csv()], publish)).resolves.toHaveProperty(
+      "uploadBatchId",
+    );
+  });
+});

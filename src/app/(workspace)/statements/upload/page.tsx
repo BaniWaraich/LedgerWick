@@ -19,6 +19,34 @@ import styles from "./page.module.css";
 
 const ACCEPT = ".pdf,.csv,application/pdf,text/csv";
 
+/** What the upload route returns when it worked. */
+interface UploadResponse {
+  uploadBatchId: string;
+}
+
+/**
+ * The response body, or null when there isn't one we can read.
+ *
+ * A route that threw returns Next's HTML error page rather than JSON, and parsing that
+ * throws. Keeping the parse separate from the fetch is the whole point: with both inside one
+ * `try`, a server that answered with a 500 was reported as a server that could not be
+ * reached, and the difference between those two is an hour of looking in the wrong place.
+ */
+async function readJson(response: Response): Promise<(UploadResponse & { error?: string }) | null> {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+function errorFrom(response: Response, body: { error?: string } | null): string {
+  if (body?.error) return body.error;
+  // The server answered and we could not read what it said. Saying so, with the status, is
+  // more use than a generic apology -- to the person reading it and to whoever they tell.
+  return `Something went wrong on our side (error ${response.status}). Please try again.`;
+}
+
 export default function UploadStatementPage() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -35,23 +63,37 @@ export default function UploadStatementPage() {
     const body = new FormData();
     for (const file of files) body.append("files", file);
 
+    let response: Response;
     try {
-      const response = await fetch("/api/statements", { method: "POST", body });
-      const result = await response.json();
-
-      if (!response.ok) {
-        setError(result.error ?? "That upload didn't work. Please try again.");
-        setUploading(false);
-        return;
-      }
-
-      // Processing continues without this page. The batch screen reads it from the
-      // database, so leaving or refreshing loses nothing.
-      router.push(`/statements/${result.uploadBatchId}`);
+      response = await fetch("/api/statements", { method: "POST", body });
     } catch {
+      // Only a genuine network failure reaches here now. Everything the server said,
+      // however badly, is handled below.
       setError("We couldn't reach the server. Please check your connection and try again.");
       setUploading(false);
+      return;
     }
+
+    // The route redirects an unauthenticated request to the login page, and `fetch` follows
+    // redirects — so a lapsed session arrives here as a perfectly successful response
+    // containing HTML.
+    if (response.redirected) {
+      setError("Your session expired. Please sign in again and retry the upload.");
+      setUploading(false);
+      return;
+    }
+
+    const result = await readJson(response);
+
+    if (!response.ok || !result) {
+      setError(errorFrom(response, result));
+      setUploading(false);
+      return;
+    }
+
+    // Processing continues without this page. The batch screen reads it from the
+    // database, so leaving or refreshing loses nothing.
+    router.push(`/statements/${result.uploadBatchId}`);
   }
 
   return (
