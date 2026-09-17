@@ -90,7 +90,9 @@ describe("the rows a statement holds that are not transactions", () => {
     ]);
 
     expect(lines).toHaveLength(2);
-    expect(skipped).toEqual([{ rowIndex: 2, reason: "no date" }]);
+    // "no amount" rather than "no date": the amount is what identifies a transaction now,
+    // because a date may legitimately be absent on a statement that prints it once a day.
+    expect(skipped).toEqual([{ rowIndex: 2, reason: "no amount" }]);
   });
 
   it("skips a carried-forward line, which has a date and no amount", () => {
@@ -273,5 +275,126 @@ describe("where the walk starts", () => {
     });
     expect(lines).toHaveLength(0);
     expect(skipped[0].reason).toBe("no amount");
+  });
+});
+
+describe("a statement that prints the date only when it changes", () => {
+  // Bank of Ireland does this. Requiring a date on every row threw away 238 of its 335
+  // payments -- 71% of a real statement, silently -- and reported a discrepancy of
+  // €14,349.88 rather than saying anything about the rows it had dropped.
+
+  it("carries the date forward to the rows beneath it", () => {
+    const { lines } = walk([
+      ["01/08/2023", "FIRST OF THE DAY", "", "10.00", "", ""],
+      ["", "SECOND OF THE DAY", "", "20.00", "", ""],
+      ["", "THIRD OF THE DAY", "", "30.00", "", ""],
+      ["02/08/2023", "NEXT DAY", "", "40.00", "", ""],
+    ]);
+
+    expect(lines).toHaveLength(4);
+    expect(lines.map((line) => line.valueDate)).toEqual([
+      "2023-08-01",
+      "2023-08-01",
+      "2023-08-01",
+      "2023-08-02",
+    ]);
+  });
+
+  it("never carries a date backward", () => {
+    // A date belongs to the rows beneath it and nothing above it.
+    const { lines, skipped } = walk([
+      ["", "BEFORE ANY DATE", "", "10.00", "", ""],
+      ["02/08/2023", "AFTER", "", "20.00", "", ""],
+    ]);
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0].description).toBe("AFTER");
+    expect(skipped[0]).toEqual({ rowIndex: 1, reason: "no date" });
+  });
+
+  it("still refuses a row that has a date and no amount", () => {
+    const { lines, skipped } = walk([
+      ["01/08/2023", "ACME", "", "10.00", "", ""],
+      ["02/08/2023", "B/F CARRIED FORWARD", "", "", "", "1,00,000.00"],
+    ]);
+
+    expect(lines).toHaveLength(1);
+    expect(skipped[0].reason).toBe("no amount");
+  });
+});
+
+describe("a narration that is taller than the figures beside it", () => {
+  // ICICI renders one transaction as three baselines: narration, then the date and amounts,
+  // then more narration, with the numbers centred against the text. Reading the description
+  // off the amount's own row found one for 98 of 728 transactions.
+
+  it("gathers the line above and the line below", () => {
+    const { lines } = walk([
+      ["", "UPI/123456789/PART ONE", "", "", "", ""],
+      ["01/08/2023", "", "", "4,850.00", "", "1,20,000.00"],
+      ["", "PART TWO", "", "", "", ""],
+    ]);
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0].description).toBe("UPI/123456789/PART ONE PART TWO");
+  });
+
+  it("reads the gathered lines in the order they appear on the page", () => {
+    const { lines } = walk([
+      ["", "FIRST", "", "", "", ""],
+      ["01/08/2023", "MIDDLE", "", "4,850.00", "", ""],
+      ["", "LAST", "", "", "", ""],
+    ]);
+
+    expect(lines[0].description).toBe("FIRST MIDDLE LAST");
+  });
+
+  it("gives each transaction the narration nearest to it", () => {
+    const { lines } = walk([
+      ["", "BELONGS TO A", "", "", "", ""],
+      ["01/08/2023", "", "", "10.00", "", ""],
+      ["", "ALSO A", "", "", "", ""],
+      ["", "BELONGS TO B", "", "", "", ""],
+      ["02/08/2023", "", "", "20.00", "", ""],
+      ["", "ALSO B", "", "", "", ""],
+    ]);
+
+    expect(lines).toHaveLength(2);
+    expect(lines[0].description).toBe("BELONGS TO A ALSO A");
+    expect(lines[1].description).toBe("BELONGS TO B ALSO B");
+  });
+
+  it("does not absorb a repeated column header", () => {
+    // The guard that matters. A header has text in the date and amount columns too, so it
+    // is not a bare line of narration and never joins the transaction beside it.
+    const { lines } = walk([
+      ["01/08/2023", "ACME", "", "10.00", "", ""],
+      HEADER,
+      ["02/08/2023", "BETA", "", "20.00", "", ""],
+    ]);
+
+    expect(lines.map((line) => line.description)).toEqual(["ACME", "BETA"]);
+  });
+
+  it("does not absorb a totals row", () => {
+    const { lines } = walk([
+      ["01/08/2023", "ACME", "", "10.00", "", ""],
+      ["", "TOTAL", "", "10.00", "", ""],
+    ]);
+
+    // The totals row carries an amount, so it is read as a transaction rather than as
+    // narration -- wrong, but visibly wrong: it shifts the balance and the check catches it.
+    expect(lines[0].description).toBe("ACME");
+  });
+
+  it("does not reach a stray line far from any transaction", () => {
+    const { lines } = walk([
+      ["01/08/2023", "ACME", "", "10.00", "", ""],
+      ["", "", "", "", "", ""],
+      ["", "", "", "", "", ""],
+      ["", "AN ADDRESS BLOCK FAR BELOW", "", "", "", ""],
+    ]);
+
+    expect(lines[0].description).toBe("ACME");
   });
 });

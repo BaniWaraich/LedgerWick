@@ -27,7 +27,7 @@ import { readAmount, type Amount } from "../money/amounts";
 import type { Currency } from "../money/currencies";
 import type { ColumnMapping } from "../ai/prompts/map-statement-columns.v1";
 import type { Grid } from "./csv";
-import { readDate } from "./dates";
+import { readDate, type IsoDate } from "./dates";
 
 /** One transaction, as this statement recorded it. */
 export interface ParsedLine {
@@ -66,8 +66,16 @@ export interface Walk {
  */
 const EMPTY_REFERENCE = /^[\s0\-.,/\\]*$/;
 
+/**
+ * How far from a transaction a stray line of text may sit and still belong to it.
+ *
+ * Two is enough for every layout seen so far — ICICI puts one narration line above its
+ * amounts and one below — and small enough that a header block further up the page cannot
+ * reach a transaction and attach itself to it.
+ */
+const MAX_CONTINUATION_DISTANCE = 2;
+
 export function walkStatement(grid: Grid, mapping: ColumnMapping, currency: Currency): Walk {
-  const lines: ParsedLine[] = [];
   const skipped: SkippedRow[] = [];
 
   const cell = (row: number, column: number | null): string =>
@@ -76,36 +84,115 @@ export function walkStatement(grid: Grid, mapping: ColumnMapping, currency: Curr
   const amountAt = (row: number, column: number | null): Amount | null =>
     column === null ? null : readAmount(cell(row, column), currency, mapping.decimalSeparator);
 
-  for (let row = mapping.firstDataRow; row < grid.length; row += 1) {
-    const valueDate = readDate(cell(row, mapping.dateColumn), mapping.dateOrder);
-    if (!valueDate) {
-      skipped.push({ rowIndex: row, reason: "no date" });
-      continue;
-    }
+  const descriptionOn = (row: number): string =>
+    mapping.descriptionColumns
+      .map((column) => cell(row, column).trim())
+      .filter((part) => part !== "")
+      .join(" ");
 
+  /*
+   * Pass one: the rows that are transactions.
+   *
+   * A transaction is a row carrying an amount. The date may be absent, because plenty of
+   * statements print it only when it changes — Bank of Ireland writes it once a day, and
+   * requiring one per row threw away 238 of its 335 payments, which is 71% of a statement
+   * silently discarded. So the last date seen is carried forward, which is what a person
+   * reading the page does.
+   *
+   * Carried forward only, never backward, and only from a row that was itself a
+   * transaction: a date belongs to the rows beneath it, and nothing above it.
+   */
+  const anchors: { row: number; line: Omit<ParsedLine, "description"> }[] = [];
+  let carried: IsoDate | null = null;
+
+  for (let row = mapping.firstDataRow; row < grid.length; row += 1) {
     const movement = readMovement(mapping, amountAt, cell, row);
     if (typeof movement === "string") {
       skipped.push({ rowIndex: row, reason: movement });
       continue;
     }
 
+    const printed = readDate(cell(row, mapping.dateColumn), mapping.dateOrder);
+    const valueDate: IsoDate | null = printed ?? carried;
+    if (!valueDate) {
+      // An amount before any date at all. Nothing to attribute it to.
+      skipped.push({ rowIndex: row, reason: "no date" });
+      continue;
+    }
+
+    /*
+     * A row leaning on a carried date has to say what it was for.
+     *
+     * Dropping the date requirement let in rows that merely contain a number: Bank of
+     * Ireland repeats the account's IBAN in a page footer, and its eight-digit account
+     * number landed in the column the mapping had called "credit", arriving as a €750
+     * million receipt on every page. A printed date is its own evidence that a row belongs
+     * to the table; a carried one is an assumption, so it is only made for a row that also
+     * carries a narration -- which every real transaction on that statement does, and none
+     * of the footers do.
+     */
+    if (!printed && descriptionOn(row) === "") {
+      skipped.push({ rowIndex: row, reason: "no date and no description" });
+      continue;
+    }
+
+    carried = valueDate;
+
     const balance = amountAt(row, mapping.balanceColumn);
 
-    lines.push({
-      rowIndex: row,
-      valueDate,
-      description: mapping.descriptionColumns
-        .map((column) => cell(row, column).trim())
-        .filter((part) => part !== "")
-        .join(" ")
-        .replace(/\s+/g, " ")
-        .trim(),
-      amountMinor: movement.amountMinor,
-      direction: movement.direction,
-      balanceMinor: balance ? signed(balance) : null,
-      externalReference: reference(cell(row, mapping.referenceColumn)),
+    anchors.push({
+      row,
+      line: {
+        rowIndex: row,
+        valueDate,
+        amountMinor: movement.amountMinor,
+        direction: movement.direction,
+        balanceMinor: balance ? signed(balance) : null,
+        externalReference: reference(cell(row, mapping.referenceColumn)),
+      },
     });
   }
+
+  /*
+   * Pass two: the description, gathered from the rows around each transaction.
+   *
+   * A narration is a cell, not a row, and on a real statement it is often taller than the
+   * figures beside it. ICICI renders a transaction as three baselines — a line of narration,
+   * then the date and amounts, then more narration — with the numbers centred against the
+   * text. Reading the description off the amount's own row found one for 98 of 728
+   * transactions and left the rest blank, which would leave invoice identification with
+   * nothing to reason about.
+   *
+   * So a row that carries description text and nothing else joins the nearest transaction.
+   * "Nothing else" is the guard that matters: a repeated column header has text in the date
+   * and amount columns too, so it is not a continuation and is never absorbed into one.
+   */
+  const anchorRows = anchors.map((anchor) => anchor.row);
+  const gathered = new Map<number, number[]>();
+
+  for (let row = mapping.firstDataRow; row < grid.length; row += 1) {
+    if (anchorRows.includes(row)) continue;
+    if (descriptionOn(row) === "") continue;
+    if (!isBareText(mapping, cell, amountAt, row)) continue;
+
+    const nearest = nearestAnchor(anchorRows, row);
+    if (nearest === null) continue;
+
+    const rows = gathered.get(nearest);
+    if (rows) rows.push(row);
+    else gathered.set(nearest, [row]);
+  }
+
+  const lines = anchors.map((anchor) => ({
+    ...anchor.line,
+    description: [...(gathered.get(anchor.row) ?? []), anchor.row]
+      .sort((a, b) => a - b)
+      .map(descriptionOn)
+      .filter((part) => part !== "")
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim(),
+  }));
 
   return { lines, skipped };
 }
@@ -185,6 +272,57 @@ function fromCell(amount: Amount): "DEBIT" | "CREDIT" | null {
 /** An amount that is actually there. A zero is a filled-in blank, not a movement. */
 function nonZero(amount: Amount | null): Amount | null {
   return amount && amount.minorUnits !== 0n ? amount : null;
+}
+
+/**
+ * Whether a row is text and only text in the columns that decide a transaction.
+ *
+ * The guard that stops a repeated column header, a totals line or a page footer being
+ * absorbed into the transaction above it: all of those put something in the date or amount
+ * columns, and a genuine continuation of a narration puts nothing anywhere but the
+ * description.
+ */
+function isBareText(
+  mapping: ColumnMapping,
+  cell: (row: number, column: number | null) => string,
+  amountAt: (row: number, column: number | null) => Amount | null,
+  row: number,
+): boolean {
+  if (cell(row, mapping.dateColumn).trim() !== "") return false;
+  for (const column of [
+    mapping.debitColumn,
+    mapping.creditColumn,
+    mapping.amountColumn,
+    mapping.balanceColumn,
+  ]) {
+    if (amountAt(row, column)) return false;
+  }
+  return true;
+}
+
+/**
+ * The transaction a stray line of text belongs to: the closest one, by row.
+ *
+ * On a tie the transaction above wins, because a wrapped narration continues downward more
+ * often than it begins above — and where a statement does put the first line above its
+ * figures, as ICICI does, that line is strictly closer to its own transaction than to the
+ * one before it, so the tie never arises.
+ */
+function nearestAnchor(anchorRows: readonly number[], row: number): number | null {
+  let best: number | null = null;
+  let distance = MAX_CONTINUATION_DISTANCE + 1;
+
+  for (const anchor of anchorRows) {
+    const gap = Math.abs(anchor - row);
+    if (gap < distance || (gap === distance && anchor < row)) {
+      if (gap <= MAX_CONTINUATION_DISTANCE) {
+        best = anchor;
+        distance = gap;
+      }
+    }
+  }
+
+  return best;
 }
 
 /** A balance, with its sign applied: an account can be overdrawn. */
