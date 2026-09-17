@@ -123,3 +123,56 @@ describe("routing a document to its path", () => {
     expect(source.path).toBe("SCANNED");
   });
 });
+
+/**
+ * An extractor that consumes what it is given, as the real one does.
+ *
+ * pdf.js takes ownership of the array and detaches its buffer. Every other fake in this file
+ * politely leaves its argument alone, which is exactly why they all passed while every
+ * scanned statement in the real app failed.
+ */
+function detachingPdfText(pages: PositionedText[][]): ExtractPdfText {
+  return async (bytes) => {
+    structuredClone(bytes.buffer, { transfer: [bytes.buffer] });
+    return { pages: pages.length, items: pages };
+  };
+}
+
+describe("a PDF extractor that consumes its input", () => {
+  it("still leaves the scanned path a readable document", async () => {
+    // The bug this pins: the bytes went to the text extractor, came back detached and empty,
+    // and were then handed to the vision model, which was sent a zero-byte PDF. It failed
+    // every scanned statement on every retry, with an error that named the gateway.
+    const source = await readStatementSource(PDF, detachingPdfText([[]]));
+
+    expect(source.path).toBe("SCANNED");
+    if (source.path === "SCANNED") {
+      expect(source.bytes.byteLength).toBe(PDF.byteLength);
+      expect(source.bytes.byteLength).toBeGreaterThan(0);
+    }
+  });
+
+  it("does not detach the caller's own array", async () => {
+    const bytes = new TextEncoder().encode("%PDF-1.7\nscanned");
+    await readStatementSource(bytes, detachingPdfText([[]]));
+
+    // A detached buffer reads as zero bytes, which is the observable symptom and does not
+    // need `ArrayBuffer.detached` (ES2024) to assert.
+    expect(bytes.byteLength).toBe(16);
+  });
+
+  it("still routes a text PDF to the text path", async () => {
+    const rows = Array.from({ length: 30 }, (_, index) =>
+      line(800 - index * 10, [
+        "0" + ((index % 9) + 1) + "/08/2023",
+        "A LONG ENOUGH NARRATION TO COUNT",
+        "REF000000000" + index,
+        "4,850.00",
+        "1,27,778.97",
+      ]),
+    );
+    const source = await readStatementSource(PDF, detachingPdfText([rows.flat()]));
+
+    expect(source.path).toBe("TEXT");
+  });
+});

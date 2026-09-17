@@ -92,7 +92,21 @@ export async function readStatementSource(
 ): Promise<StatementSource> {
   if (!looksLikePdf(bytes)) return { path: "TEXT", grid: readCsvGrid(bytes) };
 
-  const { pages, items } = await extractPdfText(bytes);
+  /*
+   * A copy, because the scanned branch below still needs these bytes.
+   *
+   * pdf.js takes ownership of the array it is handed and detaches the underlying buffer, so
+   * after extraction the original reads as zero bytes. The text path never noticed -- its
+   * grid is built from the items already returned -- but the scanned path passes the
+   * document straight on to a vision model, and was handing it an empty PDF. It failed every
+   * scanned statement, on every retry, with an error from the gateway that pointed at the
+   * gateway.
+   *
+   * The copy lives here rather than in `pdf-text.ts` because the requirement is this
+   * function's: it promises usable bytes on the scanned branch, so it must not give its only
+   * copy to something that may consume it -- whichever extractor is injected.
+   */
+  const { pages, items } = await extractPdfText(new Uint8Array(bytes));
   const grid = gridFromItems(items);
   const characters = items.flat().reduce((total, item) => total + item.text.trim().length, 0);
 

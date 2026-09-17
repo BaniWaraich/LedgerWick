@@ -26,6 +26,9 @@ export interface PdfText {
 /**
  * Read a PDF's embedded text.
  *
+ * Consumes the array it is given: pdf.js detaches the underlying buffer, so the argument
+ * reads as zero bytes afterwards. `source.ts` passes a copy for that reason.
+ *
  * A PDF with no text layer is not an error here — it comes back with pages and no items,
  * which is precisely the signal that decides the scanned path. ADR 0003 requires that
  * choice to be made from the document rather than from its extension, and this is the
