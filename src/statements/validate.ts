@@ -168,20 +168,33 @@ function pick(preferred: bigint | null, source: BalanceSource, fallback: Balance
  * at.
  */
 function fromBalanceColumn(lines: readonly ParsedLine[]): Balances {
-  const withBalance = lines.filter((line) => line.balanceMinor !== null);
-  if (withBalance.length === 0) return { opening: ABSENT, closing: ABSENT };
+  if (lines.length === 0) return { opening: ABSENT, closing: ABSENT };
 
-  const first = withBalance[0];
-  const last = withBalance[withBalance.length - 1];
+  /*
+   * The first and last transactions specifically, not the first and last that happen to
+   * have a balance.
+   *
+   * Those are different things, and the difference is a wrong number rather than a missing
+   * one. On a sample statement whose final row printed its balance as `44.079.83` -- two
+   * decimal points, so not a number at all -- this reached back to the previous row and
+   * reported the statement as out by exactly the last transaction's amount. A confident
+   * figure that is really "we used the wrong row" is worse than no figure: `§8` shows the
+   * difference to the user as something to act on.
+   */
+  const first = lines[0];
+  const last = lines[lines.length - 1];
 
   const before =
-    first.direction === "DEBIT"
-      ? first.balanceMinor! + first.amountMinor
-      : first.balanceMinor! - first.amountMinor;
+    first.balanceMinor === null
+      ? null
+      : first.direction === "DEBIT"
+        ? first.balanceMinor + first.amountMinor
+        : first.balanceMinor - first.amountMinor;
 
   return {
-    opening: { minor: before, source: "BALANCE_COLUMN" },
-    closing: { minor: last.balanceMinor, source: "BALANCE_COLUMN" },
+    opening: before === null ? ABSENT : { minor: before, source: "BALANCE_COLUMN" },
+    closing:
+      last.balanceMinor === null ? ABSENT : { minor: last.balanceMinor, source: "BALANCE_COLUMN" },
   };
 }
 

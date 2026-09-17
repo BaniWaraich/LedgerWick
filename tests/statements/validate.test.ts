@@ -185,6 +185,32 @@ describe("where the balances come from", () => {
     expect(balancesFromGrid([], wrong, withColumn, INR).closing.source).toBe("BALANCE_COLUMN");
   });
 
+  it("offers no closing balance when the last transaction has none", () => {
+    // Not the same as reaching back to the previous row. A sample statement printed its
+    // final balance as "44.079.83" -- two decimal points, so not a number -- and using the
+    // row above reported the statement as out by exactly that transaction's amount. A
+    // confident wrong figure is worse than none: §8 shows it to the user to act on.
+    const lastUnreadable = [
+      line({ amountMinor: 485000n, direction: "DEBIT", balanceMinor: 11515000n }),
+      line({ amountMinor: 98733n, direction: "DEBIT", balanceMinor: null }),
+    ];
+    const result = balancesFromGrid([], mapping, lastUnreadable, INR);
+
+    expect(result.opening.source).toBe("BALANCE_COLUMN");
+    expect(result.closing).toEqual({ minor: null, source: null });
+  });
+
+  it("offers no opening balance when the first transaction has none", () => {
+    const firstUnreadable = [
+      line({ amountMinor: 485000n, direction: "DEBIT", balanceMinor: null }),
+      line({ amountMinor: 100000n, direction: "CREDIT", balanceMinor: 12515000n }),
+    ];
+    const result = balancesFromGrid([], mapping, firstUnreadable, INR);
+
+    expect(result.opening).toEqual({ minor: null, source: null });
+    expect(result.closing.minor).toBe(12515000n);
+  });
+
   it("has nothing to offer when there is no column and no locator", () => {
     expect(balancesFromGrid([], mapping, [line()], INR)).toEqual({
       opening: { minor: null, source: null },
