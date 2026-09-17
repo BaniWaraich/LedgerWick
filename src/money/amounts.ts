@@ -66,8 +66,26 @@ const MINUS = /^[-−–]|[-−–]$/;
 const TRAILING_MARKER = /(?<![A-Z])(DR|CR)\.?$/i;
 const LEADING_MARKER = /^(DR|CR)\.?(?![A-Z])/i;
 
-/** A spelled-out currency and the full stop that abbreviates it: `Rs.`, `INR`, `AED`. */
-const ABBREVIATION = /[A-Za-z]+\.?/g;
+/**
+ * A spelled-out currency, at one end of the cell: `Rs. 4,850.00`, `INR 4,850.00`, `100 MCR`.
+ *
+ * Anchored, and that is the whole point. This used to strip letters wherever they appeared,
+ * which quietly turned an identifier into a number: an IBAN reading `IE12 BOFI 9000 1775
+ * 0694 08` in a column the mapping had called "credit" came out as 1.49e18 minor units, and
+ * a footer reading `PAN ... STC No ...` came out as a ₹11,95,001 credit. Both sailed through
+ * as transactions and broke their statement's balance by exactly their own size.
+ *
+ * A currency is written beside an amount, never threaded through it. Letters left in the
+ * middle mean this cell is not an amount, and the whitelist below refuses it.
+ *
+ * The separator is required for the same reason. `Rs. 4,850.00` and `INR 4,850.00` put a
+ * stop or a space between the word and the number; an identifier does not. Without that
+ * rule, the IFSC code `ICIC0000202` sitting in a column the mapping had called "credit"
+ * lost its four letters and arrived as a ₹202.00 receipt -- which is exactly the amount a
+ * real ICICI statement then failed to reconcile by.
+ */
+const LEADING_WORD = /^[A-Za-z]+(?:\.\s*|\s+)/;
+const TRAILING_WORD = /\s+[A-Za-z]+\.?$/;
 
 /**
  * What may be discarded from an amount: currency symbols and spaces of every width.
@@ -135,7 +153,10 @@ export function readAmount(
   // Words go first, and they take their own full stop with them. `Rs. 4,850.00` otherwise
   // keeps the stop after `Rs`, arrives here as `.4850.00`, and is refused for having two
   // decimal points — a rupee sign spelled out is not a malformed amount.
-  const cleaned = rest.replace(ABBREVIATION, " ").replace(DISCARDABLE, "");
+  const cleaned = rest
+    .replace(LEADING_WORD, " ")
+    .replace(TRAILING_WORD, " ")
+    .replace(DISCARDABLE, "");
   if (!ONLY_DIGITS_AND_SEPARATORS.test(cleaned)) return null;
 
   const grouping = decimalSeparator === "." ? "," : ".";

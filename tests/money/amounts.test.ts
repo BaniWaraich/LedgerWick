@@ -184,6 +184,31 @@ describe("declining to read", () => {
     expect(minor("48#50.00")).toBeNull();
   });
 
+  it("refuses an identifier that happens to sit in an amount column", () => {
+    // Found on two real statements. An IBAN in a column the mapping called "credit" was
+    // read as 1.49e18 minor units, and a page footer as a ₹11,95,001 credit -- both became
+    // transactions and broke their statement's balance by exactly their own size. A
+    // currency is written beside an amount, never threaded through it.
+    expect(minor("IE12 BOFI 9000 1775 0694 08", EUR)).toBeNull();
+    expect(minor("PAN AAACI1195B STC No 12345")).toBeNull();
+    expect(minor("MHW1-WBG-M-03-Mar")).toBeNull();
+  });
+
+  it("refuses a bank code that runs straight into its digits", () => {
+    // An IFSC code in a column the mapping had called "credit" lost its four letters and
+    // arrived as a ₹202.00 receipt -- exactly the amount a real ICICI statement then failed
+    // to reconcile by. A currency word is separated from its number; an identifier is not.
+    expect(minor("ICIC0000202")).toBeNull();
+    expect(minor("HDFC0001116")).toBeNull();
+    expect(minor("UTIB0000870")).toBeNull();
+  });
+
+  it("still reads a currency word that is properly separated", () => {
+    expect(minor("Rs. 4,850.00")).toBe(485000n);
+    expect(minor("Rs.4,850.00")).toBe(485000n);
+    expect(minor("INR 4,850.00")).toBe(485000n);
+  });
+
   it("still discards the currency symbols and spaces that are only decoration", () => {
     expect(minor("₹4,850.00")).toBe(485000n);
     expect(minor("₨ 4,850.00")).toBe(485000n);
