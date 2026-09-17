@@ -126,6 +126,15 @@ export async function recordTerminalFailure(
 }
 
 /**
+ * What identification settled, for the caller that has to decide what happens next.
+ *
+ * `BOUND` is the only outcome with anything left to do: the statement is in `PARSING` and
+ * feature D takes it from there. The others have all ended in persisted state, and the
+ * shell sending the event needs to know which is which without re-reading the row.
+ */
+export type IdentificationOutcome = "BOUND" | "NEEDS_ACCOUNT" | "FAILED" | "ALREADY_SETTLED";
+
+/**
  * Identify one statement and bind it, or stop somewhere the user can act.
  *
  * Idempotent by state rather than by a flag: a statement that has moved past
@@ -137,12 +146,12 @@ export async function identifyStatement(
   store: DocumentStore,
   identify: IdentifyDocument,
   statementId: string,
-): Promise<void> {
+): Promise<IdentificationOutcome> {
   const statement = await scope.selectOne(bankStatements, eq(bankStatements.id, statementId));
   // Not this workspace's, or already gone. Nothing to do and nothing to report: the scope
   // has already decided the caller may not see it.
-  if (!statement) return;
-  if (!IDENTIFIABLE.has(statement.state)) return;
+  if (!statement) return "ALREADY_SETTLED";
+  if (!IDENTIFIABLE.has(statement.state)) return "ALREADY_SETTLED";
 
   await scope.update(bankStatements, { state: "IDENTIFYING" }, eq(bankStatements.id, statementId));
 
@@ -151,7 +160,7 @@ export async function identifyStatement(
     // The row points at bytes that are not there. Nothing downstream can proceed, and the
     // user can only be asked to upload it again.
     await fail(scope, statementId, BYTES_MISSING);
-    return;
+    return "FAILED";
   }
 
   const result = await identify({
@@ -162,14 +171,14 @@ export async function identifyStatement(
 
   if (!result.ok) {
     await fail(scope, statementId, UNREADABLE);
-    return;
+    return "FAILED";
   }
 
   const identification = result.value;
 
   if (identification.documentKind === "SOMETHING_ELSE") {
     await fail(scope, statementId, NOT_A_STATEMENT);
-    return;
+    return "FAILED";
   }
 
   const accountKind: AccountKind =
@@ -218,7 +227,7 @@ export async function identifyStatement(
       { ...identified, state: "NEEDS_ACCOUNT" },
       eq(bankStatements.id, statementId),
     );
-    return;
+    return "NEEDS_ACCOUNT";
   }
 
   const bankAccountId = await bindAccount(scope, {
@@ -234,4 +243,8 @@ export async function identifyStatement(
     { ...identified, bankAccountId, state: "PARSING" },
     eq(bankStatements.id, statementId),
   );
+
+  // Reported rather than published from here, so this module keeps having no dependency on
+  // Inngest at all -- the same reason the model is a parameter. The shell sends the event.
+  return "BOUND";
 }

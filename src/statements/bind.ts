@@ -46,6 +46,16 @@ export class UnsupportedCurrencyError extends Error {
   }
 }
 
+/**
+ * Sends the event that starts parsing. Injected, exactly as `intake.ts` injects its own.
+ *
+ * This half of Step 3a runs in a request rather than in a workflow, so there is no `step`
+ * to send through. Keeping it a parameter is what lets the binding rules be tested without
+ * Inngest, and it means a send that fails leaves the statement bound and in `PARSING` --
+ * recoverable -- rather than rolling back the user's answer.
+ */
+export type PublishBound = (statementId: string) => Promise<void>;
+
 /** The accounts a user may bind a statement to. Scoped, so the list cannot leak. */
 export async function accountsForBinding(scope: WorkspaceScope) {
   return scope.select(bankAccounts);
@@ -63,6 +73,7 @@ export async function bindStatementToAccount(
   statementId: string,
   choice:
     { bankAccountId: string } | { bankName: string; accountIdentifier: string; currency: string },
+  publish: PublishBound,
 ): Promise<void> {
   const statement = await scope.selectOne(bankStatements, eq(bankStatements.id, statementId));
   if (!statement || statement.state !== "NEEDS_ACCOUNT") throw new StatementNotWaitingError();
@@ -121,4 +132,9 @@ export async function bindStatementToAccount(
     { bankAccountId, state: "PARSING" },
     eq(bankStatements.id, statementId),
   );
+
+  // After the state is persisted, never before. The database is the source of truth for
+  // where this statement has got to (`architecture.md §2.2`), and an event sent first would
+  // race a workflow against the row it is about to read.
+  await publish(statementId);
 }

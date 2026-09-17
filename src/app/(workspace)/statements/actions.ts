@@ -11,6 +11,7 @@
 import { revalidatePath } from "next/cache";
 
 import { requireScope } from "../../../auth/workspace";
+import { inngest, statementBound } from "../../../inngest/client";
 import {
   bindStatementToAccount,
   StatementNotWaitingError,
@@ -44,7 +45,15 @@ export async function bindAccountAction(
   }
 
   try {
-    await bindStatementToAccount(scope, statementId, choice);
+    await bindStatementToAccount(scope, statementId, choice, async (bound) => {
+      await inngest.send(
+        statementBound.create({
+          statementId: bound,
+          workspaceId: scope.workspaceId,
+          userId: scope.userId,
+        }),
+      );
+    });
   } catch (error) {
     if (error instanceof UnknownBankAccountError) {
       return { error: "Choose an account from this workspace." };

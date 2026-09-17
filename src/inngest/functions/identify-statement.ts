@@ -14,7 +14,7 @@ import { openWorkspaceForJob } from "../../auth/background";
 import { identifyStatement, recordTerminalFailure } from "../../statements/identify";
 import { identifyDocument } from "../../statements/document-identifier";
 import { getDocumentStore } from "../../storage/blob-store";
-import { inngest, statementUploaded } from "../client";
+import { inngest, statementBound, statementUploaded } from "../client";
 
 export const identifyStatementFunction = inngest.createFunction(
   {
@@ -42,9 +42,22 @@ export const identifyStatementFunction = inngest.createFunction(
     },
   },
   async ({ event, step }) => {
-    await step.run("identify", async () => {
+    const outcome = await step.run("identify", async () => {
       const scope = await openWorkspaceForJob(event.data.userId, event.data.workspaceId);
-      await identifyStatement(scope, getDocumentStore(), identifyDocument, event.data.statementId);
+      return identifyStatement(scope, getDocumentStore(), identifyDocument, event.data.statementId);
     });
+
+    // Only a statement that reached PARSING has anything left to do. Sent through `step` so
+    // it is durable: a crash between the binding and the send would otherwise leave a bound
+    // statement that nothing ever parses.
+    if (outcome === "BOUND") {
+      await step.sendEvent("parse", [
+        statementBound.create({
+          statementId: event.data.statementId,
+          workspaceId: event.data.workspaceId,
+          userId: event.data.userId,
+        }),
+      ]);
+    }
   },
 );

@@ -7,5 +7,6 @@
  */
 
 import { identifyStatementFunction } from "./identify-statement";
+import { parseStatementFunction } from "./parse-statement";
 
-export const functions = [identifyStatementFunction];
+export const functions = [identifyStatementFunction, parseStatementFunction];

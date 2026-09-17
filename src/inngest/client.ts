@@ -38,4 +38,16 @@ export const statementUploaded = eventType("statement/uploaded", {
   schema: workspaceEvent.extend({ statementId: z.uuid() }),
 });
 
+/**
+ * A statement is bound to a bank account. Parse it.
+ *
+ * Sent from the two places that put a statement into `PARSING`: identification, when the
+ * document said which account it covers, and the account picker, when the user did. Both
+ * are the same event because what happens next is the same work — feature D does not care
+ * which of the two answered the question.
+ */
+export const statementBound = eventType("statement/bound", {
+  schema: workspaceEvent.extend({ statementId: z.uuid() }),
+});
+
 export const inngest = new Inngest({ id: "ledgerwick" });

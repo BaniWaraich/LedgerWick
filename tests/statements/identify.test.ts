@@ -474,3 +474,54 @@ describe("running identification again", () => {
     expect(await bobScope.select(bankAccounts)).toHaveLength(0);
   });
 });
+
+describe("what identification reports back", () => {
+  it("says BOUND when the statement reached PARSING", async () => {
+    // The shell sends the event that starts parsing on the strength of this, so it is the
+    // handover between features C and D rather than a convenience.
+    const store = new FakeDocumentStore();
+    const id = await uploaded(store);
+
+    expect(await identifyStatement(scope, store, modelReturning(identification()), id)).toBe(
+      "BOUND",
+    );
+  });
+
+  it("says NEEDS_ACCOUNT when the document did not name one", async () => {
+    const store = new FakeDocumentStore();
+    const id = await uploaded(store);
+    const model = modelReturning(identification({ accountIdentifier: null }));
+
+    expect(await identifyStatement(scope, store, model, id)).toBe("NEEDS_ACCOUNT");
+  });
+
+  it("says FAILED when the document is not a statement", async () => {
+    const store = new FakeDocumentStore();
+    const id = await uploaded(store);
+    const model = modelReturning(identification({ documentKind: "SOMETHING_ELSE" }));
+
+    expect(await identifyStatement(scope, store, model, id)).toBe("FAILED");
+  });
+
+  it("says ALREADY_SETTLED for a statement that has moved on", async () => {
+    // A replayed event must not start parsing a second time.
+    const store = new FakeDocumentStore();
+    const id = await uploaded(store);
+    await identifyStatement(scope, store, modelReturning(identification()), id);
+
+    expect(await identifyStatement(scope, store, modelReturning(identification()), id)).toBe(
+      "ALREADY_SETTLED",
+    );
+  });
+
+  it("says ALREADY_SETTLED for a statement in another workspace", async () => {
+    const store = new FakeDocumentStore();
+    const id = await uploaded(store);
+    const dave = await seedWorkspace(h.db, "Dave Exports");
+    const theirScope = await openWorkspace(h.db, dave.user.id, dave.workspace.id);
+
+    expect(await identifyStatement(theirScope, store, modelReturning(identification()), id)).toBe(
+      "ALREADY_SETTLED",
+    );
+  });
+});

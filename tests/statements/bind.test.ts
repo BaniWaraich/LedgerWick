@@ -25,6 +25,18 @@ import {
 import { identifyStatement } from "../../src/statements/identify";
 import { intakeBatch } from "../../src/statements/intake";
 
+/**
+ * The event that starts parsing, captured instead of sent.
+ *
+ * Injected rather than imported for the reason `intake.ts` does the same: it keeps the
+ * binding rules testable without Inngest, and it makes "was parsing actually started?" an
+ * assertion rather than an assumption.
+ */
+let published: string[] = [];
+const record = async (statementId: string) => {
+  published.push(statementId);
+};
+
 let h: TestDb;
 let alice: Awaited<ReturnType<typeof seedWorkspace>>;
 let scope: WorkspaceScope;
@@ -77,6 +89,58 @@ async function stateOf(target: WorkspaceScope, statementId: string) {
 }
 
 describe("choosing an existing account", () => {
+  it("starts parsing once the user has answered", async () => {
+    // The other half of the handover. Identification sends this event when the document
+    // named its account; here the user did, and the work that follows is the same.
+    published = [];
+    const id = await waitingStatement();
+    const [account] = await scope.insert(bankAccounts, {
+      bankName: "HDFC Bank",
+      accountIdentifier: "XXXX2222",
+      currency: "INR",
+    });
+
+    await bindStatementToAccount(scope, id, { bankAccountId: account.id }, record);
+
+    expect(published).toEqual([id]);
+  });
+
+  it("does not start parsing for a statement that was not waiting", async () => {
+    // A stale form or a double submit. Nothing was bound, so nothing should be parsed.
+    published = [];
+    const id = await waitingStatement();
+    const [account] = await scope.insert(bankAccounts, {
+      bankName: "HDFC Bank",
+      accountIdentifier: "XXXX3333",
+      currency: "INR",
+    });
+
+    await bindStatementToAccount(scope, id, { bankAccountId: account.id }, record);
+    published = [];
+
+    await expect(
+      bindStatementToAccount(scope, id, { bankAccountId: account.id }, record),
+    ).rejects.toThrow(StatementNotWaitingError);
+    expect(published).toEqual([]);
+  });
+
+  it("does not start parsing when the chosen account is not in this workspace", async () => {
+    published = [];
+    const id = await waitingStatement();
+    const bob = await seedWorkspace(h.db, "Bob Enterprises");
+    const theirScope = await openWorkspace(h.db, bob.user.id, bob.workspace.id);
+    const [theirs] = await theirScope.insert(bankAccounts, {
+      bankName: "HDFC Bank",
+      accountIdentifier: "XXXX4444",
+      currency: "INR",
+    });
+
+    await expect(
+      bindStatementToAccount(scope, id, { bankAccountId: theirs.id }, record),
+    ).rejects.toThrow(UnknownBankAccountError);
+    expect(published).toEqual([]);
+  });
+
   it("binds it and lets parsing proceed", async () => {
     const id = await waitingStatement();
     const [account] = await scope.insert(bankAccounts, {
@@ -85,7 +149,7 @@ describe("choosing an existing account", () => {
       currency: "INR",
     });
 
-    await bindStatementToAccount(scope, id, { bankAccountId: account.id });
+    await bindStatementToAccount(scope, id, { bankAccountId: account.id }, record);
 
     const row = await stateOf(scope, id);
     expect(row.state).toBe("PARSING");
@@ -106,7 +170,7 @@ describe("choosing an existing account", () => {
     // A real account id, posted into Alice's form. Step 3a: an account in another
     // workspace is not a match and must not be reachable in any form.
     await expect(
-      bindStatementToAccount(scope, id, { bankAccountId: bobAccount.id }),
+      bindStatementToAccount(scope, id, { bankAccountId: bobAccount.id }, record),
     ).rejects.toBeInstanceOf(UnknownBankAccountError);
 
     expect((await stateOf(scope, id)).state).toBe("NEEDS_ACCOUNT");
@@ -117,11 +181,16 @@ describe("creating an account", () => {
   it("creates it in this workspace and binds it", async () => {
     const id = await waitingStatement();
 
-    await bindStatementToAccount(scope, id, {
-      bankName: "Axis Bank",
-      accountIdentifier: "XXXX3333",
-      currency: "INR",
-    });
+    await bindStatementToAccount(
+      scope,
+      id,
+      {
+        bankName: "Axis Bank",
+        accountIdentifier: "XXXX3333",
+        currency: "INR",
+      },
+      record,
+    );
 
     const row = await stateOf(scope, id);
     expect(row.state).toBe("PARSING");
@@ -136,11 +205,16 @@ describe("creating an account", () => {
   it("opens it in the currency the user chose", async () => {
     const id = await waitingStatement();
 
-    await bindStatementToAccount(scope, id, {
-      bankName: "Revolut",
-      accountIdentifier: "XXXX7777",
-      currency: "EUR",
-    });
+    await bindStatementToAccount(
+      scope,
+      id,
+      {
+        bankName: "Revolut",
+        accountIdentifier: "XXXX7777",
+        currency: "EUR",
+      },
+      record,
+    );
 
     const row = await stateOf(scope, id);
     const [account] = await scope.select(bankAccounts, eq(bankAccounts.id, row.bankAccountId!));
@@ -154,11 +228,16 @@ describe("creating an account", () => {
     // chosen account id: checked, never trusted. An account opened in a currency whose
     // minor-unit exponent we do not know cannot have its amounts read correctly.
     await expect(
-      bindStatementToAccount(scope, id, {
-        bankName: "Some Bank",
-        accountIdentifier: "XXXX8888",
-        currency: "XYZ",
-      }),
+      bindStatementToAccount(
+        scope,
+        id,
+        {
+          bankName: "Some Bank",
+          accountIdentifier: "XXXX8888",
+          currency: "XYZ",
+        },
+        record,
+      ),
     ).rejects.toBeInstanceOf(UnsupportedCurrencyError);
 
     // Nothing was created, and the statement is still waiting for a usable answer.
@@ -179,11 +258,16 @@ describe("creating an account", () => {
     // Typing the name in a different case is naming that account, not asking for a second
     // one — and since the identity index now agrees, inserting would raise a unique
     // violation rather than quietly duplicating.
-    await bindStatementToAccount(scope, id, {
-      bankName: "Kotak Mahindra Bank",
-      accountIdentifier: "xxxx2468",
-      currency: "INR",
-    });
+    await bindStatementToAccount(
+      scope,
+      id,
+      {
+        bankName: "Kotak Mahindra Bank",
+        accountIdentifier: "xxxx2468",
+        currency: "INR",
+      },
+      record,
+    );
 
     const row = await stateOf(scope, id);
     expect(row.bankAccountId).toBe(existing.id);
@@ -202,11 +286,16 @@ describe("creating an account", () => {
     });
 
     // A currency typed into this form does not re-denominate an account that already exists.
-    await bindStatementToAccount(scope, id, {
-      bankName: "idfc first bank",
-      accountIdentifier: "XXXX1357",
-      currency: "USD",
-    });
+    await bindStatementToAccount(
+      scope,
+      id,
+      {
+        bankName: "idfc first bank",
+        accountIdentifier: "XXXX1357",
+        currency: "USD",
+      },
+      record,
+    );
 
     const [account] = await scope.select(bankAccounts, eq(bankAccounts.id, existing.id));
     expect(account.currency).toBe("INR");
@@ -215,11 +304,16 @@ describe("creating an account", () => {
   it("carries the document's account kind onto the account the user makes", async () => {
     const id = await waitingStatement({ documentKind: "CREDIT_CARD_STATEMENT" });
 
-    await bindStatementToAccount(scope, id, {
-      bankName: "ICICI Bank",
-      accountIdentifier: "XXXX9999",
-      currency: "INR",
-    });
+    await bindStatementToAccount(
+      scope,
+      id,
+      {
+        bankName: "ICICI Bank",
+        accountIdentifier: "XXXX9999",
+        currency: "INR",
+      },
+      record,
+    );
 
     const row = await stateOf(scope, id);
     const [account] = await scope.select(bankAccounts, eq(bankAccounts.id, row.bankAccountId!));
@@ -232,21 +326,31 @@ describe("creating an account", () => {
 describe("a statement that is not waiting", () => {
   it("refuses a second binding", async () => {
     const id = await waitingStatement();
-    await bindStatementToAccount(scope, id, {
-      bankName: "Yes Bank",
-      accountIdentifier: "XXXX4444",
-      currency: "INR",
-    });
+    await bindStatementToAccount(
+      scope,
+      id,
+      {
+        bankName: "Yes Bank",
+        accountIdentifier: "XXXX4444",
+        currency: "INR",
+      },
+      record,
+    );
     const bound = await stateOf(scope, id);
 
     // A stale form or a back button. Rebinding a statement that has moved on would
     // silently reattach a business's transactions to a different account.
     await expect(
-      bindStatementToAccount(scope, id, {
-        bankName: "Yes Bank",
-        accountIdentifier: "XXXX5555",
-        currency: "INR",
-      }),
+      bindStatementToAccount(
+        scope,
+        id,
+        {
+          bankName: "Yes Bank",
+          accountIdentifier: "XXXX5555",
+          currency: "INR",
+        },
+        record,
+      ),
     ).rejects.toBeInstanceOf(StatementNotWaitingError);
 
     expect((await stateOf(scope, id)).bankAccountId).toBe(bound.bankAccountId);
@@ -262,11 +366,16 @@ describe("a statement that is not waiting", () => {
       carolScope.selectOne(bankStatements, eq(bankStatements.id, id)),
     ).resolves.toBeNull();
     await expect(
-      bindStatementToAccount(carolScope, id, {
-        bankName: "HDFC Bank",
-        accountIdentifier: "XXXX6666",
-        currency: "INR",
-      }),
+      bindStatementToAccount(
+        carolScope,
+        id,
+        {
+          bankName: "HDFC Bank",
+          accountIdentifier: "XXXX6666",
+          currency: "INR",
+        },
+        record,
+      ),
     ).rejects.toBeInstanceOf(StatementNotWaitingError);
 
     expect((await stateOf(scope, id)).state).toBe("NEEDS_ACCOUNT");

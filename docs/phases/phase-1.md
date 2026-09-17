@@ -226,7 +226,7 @@ Two deliberate departures from a pure per-workflow cut:
 - **`upload-statement.md` splits in two.** It is by a wide margin the largest workflow and contains
   two genuinely separable halves: getting a file identified and bound to an account, and turning it
   into validated canonical transactions. The seam is clean — a `bank_statements` row with a bound
-  account and a known period.
+  account.
 
 Everything else stays whole. Notably, do **not** split "the LLM call" from "the code that uses it",
 or "the schema migration" from "the feature that needs the columns". Those are the splits that
@@ -345,13 +345,15 @@ execution and the polled processing state the rest of the phase reuses.
 
 **Dependencies.** A, B.
 
-**Complete when.** A statement moves `UPLOADING → IDENTIFYING` and either binds to an account with
-a known period or reaches `FAILED` with a human-readable reason. This is the first feature that
+**Complete when.** A statement moves `UPLOADING → IDENTIFYING` and either binds to an account or
+reaches `FAILED` with a human-readable reason. This is the first feature that
 writes to the document store, so it is the first to build a `DocumentKey` — via `documentKey()`
 with the statement row's id as the unique segment (see B), never a hand-rolled path — and the
 first to write from a background workflow rather than a request. Account lookup provably never
 leaves the workspace. Files in one batch reach independent outcomes. State survives a refresh.
-A statement with no determinable period fails rather than being silently accepted.
+A statement reports a period only where the document declares one, and one that declares none
+proceeds without it rather than failing — parsing derives the range, and the source of the two
+is recorded. `docs/decisions/0008`.
 
 ---
 
@@ -538,7 +540,7 @@ A → B → C → D → E → F → G → H → I → J → K → L
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **A → B**  | Storage must check a session and a workspace before streaming bytes; there is no authorization to apply until identity exists                                                                          |
 | **B → C**  | Intake's first act is storing the original file; the document must survive before anything is inferred from it                                                                                         |
-| **C → D**  | Parsing needs a bound account (for currency) and a known period (for coverage). Both are C's output                                                                                                    |
+| **C → D**  | Parsing needs a bound account (for currency), which is C's output. It also settles the period — declared by the document or derived from the transactions (`docs/decisions/0008`)                      |
 | **D → E**  | Identification analyses canonical transactions and may assume each movement appears exactly once — a guarantee only D provides                                                                         |
 | **E → F**  | Sequenced rather than blocked: F's real dependency is B, but building understanding once requirements exist means it is exercised against transactions it must eventually match                         |
 | **F → G**  | Matching needs normalized vendor, amount, date and currency. Those are F's output; without them there is nothing to match on                                                                            |
