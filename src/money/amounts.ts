@@ -159,10 +159,24 @@ export function readAmount(
     .replace(DISCARDABLE, "");
   if (!ONLY_DIGITS_AND_SEPARATORS.test(cleaned)) return null;
 
+  const read = asDeclared(cleaned, decimalSeparator) ?? byLastSeparator(cleaned, currency.exponent);
+  if (!read) return null;
+
+  const scaled = scale(read.fraction, currency.exponent);
+  if (scaled === null) return null;
+
+  return { minorUnits: BigInt(read.whole + scaled), sign, marker };
+}
+
+/** The digits, split the way the file said its numbers are written. */
+function asDeclared(
+  cleaned: string,
+  decimalSeparator: DecimalSeparator,
+): { whole: string; fraction: string } | null {
   const grouping = decimalSeparator === "." ? "," : ".";
 
   const parts = cleaned.split(decimalSeparator);
-  // Two decimal points is not an amount we are willing to interpret.
+  // Two decimal points is not an amount under this convention.
   if (parts.length > 2) return null;
 
   const grouped = parts[0];
@@ -176,10 +190,47 @@ export function readAmount(
   if (!/^[0-9]+$/.test(whole)) return null;
   if (fraction !== "" && !/^[0-9]+$/.test(fraction)) return null;
 
-  const scaled = scale(fraction, currency.exponent);
-  if (scaled === null) return null;
+  return { whole, fraction };
+}
 
-  return { minorUnits: BigInt(whole + scaled), sign, marker };
+/**
+ * The reading a cell gets when the file's own convention makes nonsense of it.
+ *
+ * A sample statement printed its closing balance as `44.079.83` and its opening as
+ * `40,000,00`. Neither is a number under the convention the rest of that file uses, and both
+ * are obvious to a person: the last separator is the decimal point and the one before it
+ * groups. That is not repairing the figure, it is reading it — every digit is kept exactly
+ * where it was printed, and only the decimal point's position is settled.
+ *
+ * Three conditions keep it narrow. The cell must use **one** kind of separator, because a
+ * cell mixing both has already told us which is which. That separator must appear more than
+ * once, or there is nothing here the declared reading did not already try. And the result
+ * must be well formed in full — a fraction of exactly the currency's own width, over an
+ * integer part that groups properly — so there is exactly one answer rather than a
+ * preference between several.
+ *
+ * What makes it safe is when it runs: only after `asDeclared` has already refused the cell.
+ * It can turn a refusal into a figure and can never change one the file's own convention
+ * read successfully.
+ */
+function byLastSeparator(
+  cleaned: string,
+  exponent: number,
+): { whole: string; fraction: string } | null {
+  const separators = new Set([...cleaned].filter((char) => char === "." || char === ","));
+  if (separators.size !== 1) return null;
+
+  const separator = [...separators][0];
+  const parts = cleaned.split(separator);
+  if (parts.length < 3) return null;
+
+  const fraction = parts[parts.length - 1];
+  if (fraction.length !== exponent) return null;
+
+  const whole = parts.slice(0, -1);
+  if (!isWellGrouped(whole.join(separator), separator)) return null;
+
+  return { whole: whole.join(""), fraction };
 }
 
 /**

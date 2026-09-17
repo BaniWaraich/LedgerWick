@@ -57,14 +57,13 @@ describe("reading a magnitude", () => {
 });
 
 describe("grouping that does not group", () => {
-  it("refuses a number whose groups are the wrong size", () => {
-    // A sample statement printed its opening balance as £40,000,00 -- a typo for £40,000.00
-    // -- and it was read as four million pounds, reporting a statement whose transactions
-    // reconciled to the penny as out by £3,960,000. Refusing it sends the balance to the
-    // fallback ADR 0009 already defines, which gives the right figure.
-    expect(minor("40,000,00")).toBeNull();
+  it("refuses a number whose groups are the wrong size and cannot be read another way", () => {
+    // Reading 1,23,4 as grouping gives a final group of one digit, and as a decimal gives a
+    // fraction of one digit. Neither is a shape any convention produces, so there is no
+    // single answer to prefer and the cell is refused.
     expect(minor("1,23,4")).toBeNull();
     expect(minor("12,3456")).toBeNull();
+    expect(minor("1,2,3,4")).toBeNull();
   });
 
   it("still accepts both conventions", () => {
@@ -81,6 +80,45 @@ describe("grouping that does not group", () => {
 
   it("checks the whole part, not the fraction", () => {
     expect(minor("1.234,56", EUR, ",")).toBe(123456n);
+  });
+});
+
+describe("a cell the file's own convention makes nonsense of", () => {
+  // Two real typos, from one sample statement: an opening balance printed £40,000,00 and a
+  // closing balance printed £44.079.83. Neither is a number under the convention the rest of
+  // that file uses, and both are obvious to a person -- the last separator is the decimal
+  // point and the one before it groups. Every digit stays where it was printed; only the
+  // decimal point's position is settled.
+
+  it("reads the one interpretation that is well formed", () => {
+    expect(minor("40,000,00")).toBe(4000000n);
+    expect(minor("44.079.83")).toBe(4407983n);
+    expect(minor("1.234.56")).toBe(123456n);
+  });
+
+  it("never changes a reading the declared convention already made", () => {
+    // The property that makes this safe: it runs only after the declared reading refused the
+    // cell, so it can turn a refusal into a figure and never a figure into a different one.
+    expect(minor("1,234,567")).toBe(123456700n);
+    expect(minor("1,20,000.00")).toBe(12000000n);
+    expect(minor("1.234", EUR, ",")).toBe(123400n);
+    expect(minor("120,000.00")).toBe(12000000n);
+  });
+
+  it("refuses a fraction that is not the currency's own width", () => {
+    // 1.234.567 is a European million, and this file said the full stop is its decimal
+    // point. Three digits after the last separator is not a rupee fraction, so there is no
+    // reading to prefer and it stays refused.
+    expect(minor("1.234.567")).toBeNull();
+    expect(minor("1.234.5")).toBeNull();
+  });
+
+  it("refuses when the integer part still does not group", () => {
+    expect(minor("1,2345,67")).toBeNull();
+  });
+
+  it("applies to a currency with no minor unit only where the fraction is empty", () => {
+    expect(minor("1.234.56", JPY)).toBeNull();
   });
 });
 
@@ -101,8 +139,10 @@ describe("the decimal separator is told, never guessed", () => {
     expect(minor("1.234", INR, ".")).toBeNull();
   });
 
-  it("refuses a cell with two decimal points", () => {
-    expect(minor("1.234.56")).toBeNull();
+  it("refuses a cell mixing both separators in a way the file did not describe", () => {
+    // Two kinds of separator means the cell has already said which is which, so there is
+    // nothing left to infer and a shape that fits neither is simply wrong.
+    expect(minor("1,23.45.6")).toBeNull();
   });
 });
 
