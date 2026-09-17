@@ -30,6 +30,19 @@ export type DateOrder = "DMY" | "MDY" | "YMD";
 /** A calendar date as the database stores it: `YYYY-MM-DD`, no time, no zone. */
 export type IsoDate = string;
 
+/**
+ * The span a statement covers, for the rows that do not repeat the year.
+ *
+ * Plenty of statements print the year once, in the header, and then write `1 February`
+ * against every transaction. That is not a date this function can complete on its own, and
+ * guessing the current year would be exactly the kind of invention `docs/decisions/0008`
+ * exists to prevent. The period the document itself declared supplies it, or nothing does.
+ */
+export interface StatementPeriod {
+  readonly start: IsoDate;
+  readonly end: IsoDate;
+}
+
 const MONTH_NAMES: ReadonlyMap<string, number> = new Map(
   ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"].map(
     (name, index) => [name, index + 1],
@@ -50,14 +63,28 @@ const SEPARATORS = /[\s/.\-,]+/;
  * not a real day. The caller treats null as "this row is not a transaction", which is what
  * keeps repeated headers and page footers out of the statement lines.
  */
-export function readDate(text: string, order: DateOrder): IsoDate | null {
+export function readDate(text: string, order: DateOrder, period?: StatementPeriod): IsoDate | null {
   const cleaned = text.trim().replace(TRAILING_TIME, "").trim();
   if (cleaned === "") return null;
 
   const parts = cleaned.split(SEPARATORS).filter((part) => part !== "");
-  if (parts.length !== 3) return null;
+  if (parts.length !== 2 && parts.length !== 3) return null;
 
   const named = parts.findIndex((part) => MONTH_NAMES.has(part.slice(0, 3).toLowerCase()));
+
+  /*
+   * A day and a month, with the year left to the header: `1 February`.
+   *
+   * Only ever read where the month is named, because then the two parts cannot be confused
+   * with each other. A two-part numeric date is genuinely ambiguous -- `01/02` could be a
+   * day and a month either way round, or a month and a year -- and is refused.
+   */
+  if (parts.length === 2) {
+    if (named < 0 || !period) return null;
+    const month = MONTH_NAMES.get(parts[named].slice(0, 3).toLowerCase())!;
+    const day = digits(parts[1 - named]);
+    return day === null ? null : withinPeriod(period, month, day);
+  }
 
   const fields =
     named >= 0
@@ -81,6 +108,29 @@ interface Fields {
   year: number;
   month: number;
   day: number;
+}
+
+/**
+ * The year a day-and-month must belong to, taken from the period the statement declared.
+ *
+ * The period's own year first. Where that lands before the statement even begins, the next
+ * one is tried, which is what a statement crossing new year needs: a span of 15 December to
+ * 15 January reads `20 December` in its first year and `5 January` in the second.
+ */
+function withinPeriod(period: StatementPeriod, month: number, day: number): IsoDate | null {
+  const startYear = Number(period.start.slice(0, 4));
+
+  for (const year of [startYear, startYear + 1]) {
+    if (!isRealDate(year, month, day)) continue;
+    const candidate = `${pad(year, 4)}-${pad(month, 2)}-${pad(day, 2)}`;
+    if (candidate >= period.start && candidate <= period.end) return candidate;
+  }
+
+  // Outside the declared period. A statement does sometimes carry a line dated just beyond
+  // its own span, so the period's own year is the honest reading rather than a refusal.
+  return isRealDate(startYear, month, day)
+    ? `${pad(startYear, 4)}-${pad(month, 2)}-${pad(day, 2)}`
+    : null;
 }
 
 function namedMonthFields(parts: string[], monthIndex: number): Fields | null {

@@ -42,6 +42,7 @@ import type { Grid } from "./csv";
 import type { MapColumns, ReadScanned } from "./parse-contracts";
 import { promoteStatement } from "./promote";
 import { linesFromScanned } from "./scanned";
+import type { StatementPeriod } from "./dates";
 import { readStatementSource, type ExtractPdfText } from "./source";
 import {
   balancesFromGrid,
@@ -137,10 +138,26 @@ export async function parseStatement(
   const bytes = new Uint8Array(await new Response(object.stream).arrayBuffer());
   const source = await readStatementSource(bytes, deps.extractPdfText);
 
+  /*
+   * The period the document declared, for rows that print a day and a month and leave the
+   * year to the header. Only ever a DECLARED one: a DERIVED period is worked out from the
+   * transactions themselves and so does not exist yet (`docs/decisions/0008`).
+   */
+  const declared =
+    statement.periodStart && statement.periodEnd
+      ? { start: statement.periodStart, end: statement.periodEnd }
+      : undefined;
+
   const attempt =
     source.path === "TEXT"
-      ? await readAsText(deps, source.grid, currency, await pinnedMapping(scope, statement))
-      : await readAsScan(deps, source.bytes, currency);
+      ? await readAsText(
+          deps,
+          source.grid,
+          currency,
+          await pinnedMapping(scope, statement),
+          declared,
+        )
+      : await readAsScan(deps, source.bytes, currency, declared);
 
   if (!attempt) {
     await fail(scope, statementId, STRUCTURE_UNREADABLE);
@@ -163,7 +180,7 @@ export async function parseStatement(
     currency: account.currency,
   });
 
-  const period = coveragePeriod(statement, attempt.walk);
+  const coverage = coveragePeriod(statement, attempt.walk);
 
   await scope.update(
     bankStatements,
@@ -182,7 +199,7 @@ export async function parseStatement(
         skippedRows: attempt.walk.skipped.length,
         differenceMinor: attempt.validation.differenceMinor?.toString() ?? null,
       },
-      ...period,
+      ...coverage,
     },
     eq(bankStatements.id, statementId),
   );
@@ -199,6 +216,7 @@ async function readAsText(
   grid: Grid,
   currency: Currency,
   pinned: ColumnMapping | null,
+  period: StatementPeriod | undefined,
 ): Promise<Attempt | null> {
   /*
    * The same bytes were mapped before, so they are mapped that way again.
@@ -211,12 +229,12 @@ async function readAsText(
    * has nothing to gain from a second opinion.
    */
   if (pinned) {
-    const walk = walkStatement(grid, pinned, currency);
+    const walk = walkStatement(grid, pinned, currency, period);
     const balances = balancesFromGrid(grid, pinned, walk.lines, currency);
     return { walk, balances, validation: validate(walk.lines, balances), mapping: pinned };
   }
 
-  const first = await attemptText(deps, grid, currency, undefined);
+  const first = await attemptText(deps, grid, currency, undefined, period);
   if (!first) return null;
   if (first.validation.outcome === "VALID") return first;
 
@@ -224,7 +242,7 @@ async function readAsText(
   // wrong -- a swapped debit and credit column is exactly the error the balance equation is
   // best at catching -- and unlike the scanned path, re-reading the file costs nothing in
   // accuracy because code reads every value either way.
-  const second = await attemptText(deps, grid, currency, describe(first.validation));
+  const second = await attemptText(deps, grid, currency, describe(first.validation), period);
 
   if (!second) return first;
   return second.validation.outcome === "VALID" ? second : first;
@@ -235,11 +253,12 @@ async function attemptText(
   grid: Grid,
   currency: Currency,
   problem: string | undefined,
+  period: StatementPeriod | undefined,
 ): Promise<Attempt | null> {
   const mapped = await deps.mapColumns({ grid, problem });
   if (!mapped.ok) return null;
 
-  const walk = walkStatement(grid, mapped.value, currency);
+  const walk = walkStatement(grid, mapped.value, currency, period);
   const balances = balancesFromGrid(grid, mapped.value, walk.lines, currency);
 
   return { walk, balances, validation: validate(walk.lines, balances), mapping: mapped.value };
@@ -256,11 +275,12 @@ async function readAsScan(
   deps: ParseDependencies,
   bytes: Uint8Array,
   currency: Currency,
+  period: StatementPeriod | undefined,
 ): Promise<Attempt | null> {
   const read = await deps.readScanned({ bytes });
   if (!read.ok) return null;
 
-  const walk = linesFromScanned(read.value, currency);
+  const walk = linesFromScanned(read.value, currency, period);
   const balances = balancesFromScanned(read.value, walk.lines, currency);
 
   return { walk, balances, validation: validate(walk.lines, balances), mapping: null };

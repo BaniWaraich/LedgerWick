@@ -27,7 +27,7 @@ import { readAmount, type Amount } from "../money/amounts";
 import type { Currency } from "../money/currencies";
 import type { ColumnMapping } from "../ai/prompts/map-statement-columns.v1";
 import type { Grid } from "./csv";
-import { readDate, type IsoDate } from "./dates";
+import { readDate, type IsoDate, type StatementPeriod } from "./dates";
 
 /** One transaction, as this statement recorded it. */
 export interface ParsedLine {
@@ -75,7 +75,18 @@ const EMPTY_REFERENCE = /^[\s0\-.,/\\]*$/;
  */
 const MAX_CONTINUATION_DISTANCE = 2;
 
-export function walkStatement(grid: Grid, mapping: ColumnMapping, currency: Currency): Walk {
+export function walkStatement(
+  grid: Grid,
+  mapping: ColumnMapping,
+  currency: Currency,
+  /**
+   * The span the document declared, where it declared one.
+   *
+   * Only needed by statements that print the year in the header and then write `1 February`
+   * against every row. Absent, such a statement yields nothing — which is what it did.
+   */
+  period?: StatementPeriod,
+): Walk {
   const skipped: SkippedRow[] = [];
 
   const cell = (row: number, column: number | null): string =>
@@ -87,6 +98,38 @@ export function walkStatement(grid: Grid, mapping: ColumnMapping, currency: Curr
   const descriptionOn = (row: number): string =>
     mapping.descriptionColumns
       .map((column) => cell(row, column).trim())
+      .filter((part) => part !== "")
+      .join(" ");
+
+  /*
+   * Everything on a continuation row, whatever column it landed in.
+   *
+   * A row with nothing in the date, amount, balance or reference columns is narration and
+   * only narration -- that is what `isBareText` has just established -- so every cell on it
+   * belongs to the transaction it joins, named by the mapping or not.
+   *
+   * This is deliberately more generous than the mapping. A wrapped narration does not break
+   * along the columns a model chose: asked to name ICICI's description columns it answered
+   * [2,3,4] once and [3,4] the next time, and the second answer left 26 transactions with
+   * fragments like "Of I" stranded in a column nobody had claimed. The row's own shape is a
+   * surer guide here than the column list, and it costs nothing, because a row that had
+   * anything structural on it never reaches this point.
+   */
+  const structural = new Set(
+    [
+      mapping.dateColumn,
+      mapping.debitColumn,
+      mapping.creditColumn,
+      mapping.amountColumn,
+      mapping.balanceColumn,
+      mapping.referenceColumn,
+      mapping.indicatorColumn,
+    ].filter((column): column is number => column !== null),
+  );
+
+  const continuationOn = (row: number): string =>
+    (grid[row] ?? [])
+      .map((value, column) => (structural.has(column) ? "" : value.trim()))
       .filter((part) => part !== "")
       .join(" ");
 
@@ -112,7 +155,7 @@ export function walkStatement(grid: Grid, mapping: ColumnMapping, currency: Curr
       continue;
     }
 
-    const printed = readDate(cell(row, mapping.dateColumn), mapping.dateOrder);
+    const printed = readDate(cell(row, mapping.dateColumn), mapping.dateOrder, period);
     const valueDate: IsoDate | null = printed ?? carried;
     if (!valueDate) {
       // An amount before any date at all. Nothing to attribute it to.
@@ -172,7 +215,7 @@ export function walkStatement(grid: Grid, mapping: ColumnMapping, currency: Curr
 
   for (let row = mapping.firstDataRow; row < grid.length; row += 1) {
     if (anchorRows.includes(row)) continue;
-    if (descriptionOn(row) === "") continue;
+    if (continuationOn(row) === "") continue;
     if (!isBareText(mapping, cell, amountAt, row)) continue;
 
     const nearest = nearestAnchor(anchorRows, row);
@@ -187,7 +230,9 @@ export function walkStatement(grid: Grid, mapping: ColumnMapping, currency: Curr
     ...anchor.line,
     description: [...(gathered.get(anchor.row) ?? []), anchor.row]
       .sort((a, b) => a - b)
-      .map(descriptionOn)
+      // The transaction's own row is read through the mapping, because it has structural
+      // cells on it that must not become narration; a continuation row has none.
+      .map((row) => (row === anchor.row ? descriptionOn(row) : continuationOn(row)))
       .filter((part) => part !== "")
       .join(" ")
       .replace(/\s+/g, " ")

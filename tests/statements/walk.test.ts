@@ -398,3 +398,41 @@ describe("a narration that is taller than the figures beside it", () => {
     expect(lines[0].description).toBe("ACME");
   });
 });
+
+describe("a continuation row whose column the mapping did not name", () => {
+  it("is still read, because a bare row is narration and nothing else", () => {
+    // A wrapped narration does not break along the columns a model chose. Asked to name
+    // ICICI's description columns it answered [2,3,4] once and [3,4] the next time, and the
+    // second answer stranded fragments in a column nobody had claimed -- leaving 26
+    // transactions with no description at all.
+    // Column 2 is named by nothing here: not the description, not the reference.
+    const unnamed = { ...PAIRED, referenceColumn: null };
+    const { lines } = walk(
+      [
+        ["", "", "STRANDED IN COLUMN 2", "", "", ""],
+        ["01/08/2023", "ACME", "", "4,850.00", "", ""],
+      ],
+      unnamed,
+    );
+
+    expect(lines[0].description).toBe("STRANDED IN COLUMN 2 ACME");
+  });
+
+  it("never turns a structural cell into narration", () => {
+    // The transaction's own row is read through the mapping, because it has a date, an
+    // amount and a balance on it. Only a continuation row is read wholesale.
+    const { lines } = walk([["01/08/2023", "ACME", "REF9", "4,850.00", "", "1,20,000.00"]]);
+
+    expect(lines[0].description).toBe("ACME");
+    expect(lines[0].externalReference).toBe("REF9");
+  });
+
+  it("does not gather a row that has anything structural on it", () => {
+    const { lines } = walk([
+      ["", "", "", "", "", "1,20,000.00"],
+      ["01/08/2023", "ACME", "", "4,850.00", "", ""],
+    ]);
+
+    expect(lines[0].description).toBe("ACME");
+  });
+});

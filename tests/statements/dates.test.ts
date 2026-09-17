@@ -106,3 +106,41 @@ describe("a date cell with a time appended", () => {
     expect(readDate("01/08/2023, 2:05 PM", "DMY")).toBe("2023-08-01");
   });
 });
+
+describe("a date that leaves the year to the header", () => {
+  // Plenty of statements print the year once, in the period, and then write "1 February"
+  // against every row. Without the period such a statement yields nothing at all, which is
+  // what it did: a sample statement parsed zero of its thirteen transactions.
+  const february = { start: "2019-02-01", end: "2019-03-01" };
+
+  it("takes its year from the period the document declared", () => {
+    expect(readDate("1 February", "DMY", february)).toBe("2019-02-01");
+    expect(readDate("16 February", "DMY", february)).toBe("2019-02-16");
+    expect(readDate("February 16", "MDY", february)).toBe("2019-02-16");
+  });
+
+  it("is refused when there is no period to take one from", () => {
+    // Guessing the current year is exactly the invention ADR 0008 exists to prevent.
+    expect(readDate("1 February", "DMY")).toBeNull();
+  });
+
+  it("crosses a new year within the period", () => {
+    const christmas = { start: "2018-12-15", end: "2019-01-15" };
+    expect(readDate("20 December", "DMY", christmas)).toBe("2018-12-20");
+    expect(readDate("5 January", "DMY", christmas)).toBe("2019-01-05");
+  });
+
+  it("reads a line dated just outside the period rather than refusing it", () => {
+    expect(readDate("3 March", "DMY", february)).toBe("2019-03-03");
+  });
+
+  it("refuses a two-part numeric date, which is genuinely ambiguous", () => {
+    // 01/02 could be a day and a month either way round, or a month and a year.
+    expect(readDate("01/02", "DMY", february)).toBeNull();
+    expect(readDate("2019", "DMY", february)).toBeNull();
+  });
+
+  it("still refuses a day that does not exist", () => {
+    expect(readDate("30 February", "DMY", february)).toBeNull();
+  });
+});

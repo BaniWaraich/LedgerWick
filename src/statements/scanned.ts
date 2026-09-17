@@ -20,7 +20,7 @@
 import { readAmount } from "../money/amounts";
 import type { Currency } from "../money/currencies";
 import type { ScannedStatement } from "../ai/prompts/read-scanned-statement.v1";
-import { readDate } from "./dates";
+import { readDate, type StatementPeriod } from "./dates";
 import type { ParsedLine, SkippedRow, Walk } from "./walk";
 
 /**
@@ -31,7 +31,12 @@ import type { ParsedLine, SkippedRow, Walk } from "./walk";
  * transcribed something it should not have, or transcribed it too poorly to read — but the
  * caller's interest is the same: how much of what was found could actually be used.
  */
-export function linesFromScanned(statement: ScannedStatement, currency: Currency): Walk {
+export function linesFromScanned(
+  statement: ScannedStatement,
+  currency: Currency,
+  /** As in `walk.ts`: the header's year, for rows that do not repeat it. */
+  period?: StatementPeriod,
+): Walk {
   const lines: ParsedLine[] = [];
   const skipped: SkippedRow[] = [];
 
@@ -39,7 +44,7 @@ export function linesFromScanned(statement: ScannedStatement, currency: Currency
     text === null ? null : readAmount(text, currency, statement.decimalSeparator);
 
   statement.rows.forEach((row, index) => {
-    const valueDate = readDate(row.date, statement.dateOrder);
+    const valueDate = readDate(row.date, statement.dateOrder, period);
     if (!valueDate) {
       skipped.push({ rowIndex: index, reason: "no date" });
       return;
