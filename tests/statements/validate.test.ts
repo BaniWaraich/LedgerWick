@@ -5,6 +5,7 @@ import { currencyFor } from "../../src/money/currencies";
 import {
   balancesFromGrid,
   balancesFromScanned,
+  difference,
   totalsOf,
   validate,
   type Balances,
@@ -225,5 +226,48 @@ describe("balances on the scanned path", () => {
     const unreadable = { ...statement, closingBalance: "1,87,4??.00" };
     const lines = [line({ amountMinor: 485000n, direction: "DEBIT", balanceMinor: 11515000n })];
     expect(balancesFromScanned(unreadable, lines, INR).closing.source).toBe("BALANCE_COLUMN");
+  });
+});
+
+describe("the difference, shared with the summary screen", () => {
+  it("is the same expression validation uses", () => {
+    // One implementation rather than two. The summary screen reads the four figures off the
+    // row and needs the same number, and this is the one piece of arithmetic the product
+    // cannot afford to have disagree with itself.
+    const lines = [line({ amountMinor: 485000n, direction: "DEBIT" })];
+    const result = validate(lines, balances(12000000n, 11765000n));
+
+    expect(
+      difference({
+        openingBalance: 12000000n,
+        closingBalance: 11765000n,
+        totalCredits: 0n,
+        totalDebits: 485000n,
+      }),
+    ).toBe(result.differenceMinor);
+  });
+
+  it("is zero for a statement that reconciles", () => {
+    expect(
+      difference({
+        openingBalance: 12000000n,
+        closingBalance: 11515000n,
+        totalCredits: 0n,
+        totalDebits: 485000n,
+      }),
+    ).toBe(0n);
+  });
+
+  it("is null when any end is missing", () => {
+    const figures = {
+      openingBalance: 12000000n,
+      closingBalance: 11515000n,
+      totalCredits: 0n,
+      totalDebits: 485000n,
+    };
+    expect(difference({ ...figures, openingBalance: null })).toBeNull();
+    expect(difference({ ...figures, closingBalance: null })).toBeNull();
+    expect(difference({ ...figures, totalCredits: null })).toBeNull();
+    expect(difference({ ...figures, totalDebits: null })).toBeNull();
   });
 });

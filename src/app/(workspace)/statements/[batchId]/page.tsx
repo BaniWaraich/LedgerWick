@@ -12,9 +12,13 @@
 import { eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 
+import Link from "next/link";
+
 import { requireScope } from "../../../../auth/workspace";
-import { bankStatements } from "../../../../db/schema";
+import { bankAccounts, bankStatements } from "../../../../db/schema";
 import { currencyFor } from "../../../../money/currencies";
+import { formatAmount } from "../../../../money/format";
+import { difference } from "../../../../statements/validate";
 import { accountsForBinding } from "../../../../statements/bind";
 import { AccountPicker } from "./account-picker";
 import { PollWhileProcessing } from "./poll";
@@ -55,6 +59,12 @@ export default async function StatementBatchPage({
   const waiting = statements.some((statement) => statement.state === "NEEDS_ACCOUNT");
   const accounts = waiting ? await accountsForBinding(scope) : [];
 
+  // The currency a statement's figures are in belongs to the account it was bound to, not
+  // to the statement (Step 3a). One scoped read covers every row on the page.
+  const workspaceAccounts = await scope.select(bankAccounts);
+  const currencyOf = (bankAccountId: string | null) =>
+    currencyFor(workspaceAccounts.find((account) => account.id === bankAccountId)?.currency);
+
   return (
     <div className={styles.page}>
       <header className={styles.header}>
@@ -87,6 +97,14 @@ export default async function StatementBatchPage({
               </p>
             ) : null}
 
+            {statement.state === "COMPLETED" ? (
+              <Summary
+                batchId={batchId}
+                statement={statement}
+                currency={currencyOf(statement.bankAccountId)}
+              />
+            ) : null}
+
             {statement.state === "NEEDS_ACCOUNT" ? (
               <AccountPicker
                 statementId={statement.id}
@@ -107,6 +125,73 @@ export default async function StatementBatchPage({
       {statements.some((statement) => IN_FLIGHT.has(statement.state)) ? (
         <PollWhileProcessing />
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * What §7 calls the parsing summary, and what §8 asks for when it does not reconcile.
+ *
+ * Every figure comes from the row rather than being recomputed here: `architecture.md §14`
+ * has the frontend reflect persisted state, and the balance equation already ran once in
+ * `validate.ts`. Adding it up again in a component would be a second implementation of the
+ * one arithmetic the product cannot get wrong.
+ */
+function Summary({
+  batchId,
+  statement,
+  currency,
+}: {
+  batchId: string;
+  statement: typeof bankStatements.$inferSelect;
+  currency: ReturnType<typeof currencyFor>;
+}) {
+  // Without a currency there is no honest way to print a figure, so the count stands alone
+  // rather than being shown against an assumed unit.
+  const money = (minor: bigint | null) =>
+    currency && minor !== null ? formatAmount(minor, currency) : null;
+
+  const opening = money(statement.openingBalance);
+  const closing = money(statement.closingBalance);
+  const shortfall = money(difference(statement));
+
+  return (
+    <div className={styles.summary}>
+      <p className={styles.message}>
+        {statement.lineCount === 1
+          ? "1 transaction extracted"
+          : `${statement.lineCount ?? 0} transactions extracted`}
+      </p>
+
+      {opening && closing ? (
+        <dl className={styles.balances}>
+          <dt>Opening balance</dt>
+          <dd>{opening}</dd>
+          <dt>Closing balance</dt>
+          <dd>{closing}</dd>
+        </dl>
+      ) : null}
+
+      <p className={styles.reconciled} data-outcome={statement.validationOutcome}>
+        <span className="material-symbols-outlined" aria-hidden="true">
+          {statement.validationOutcome === "VALID" ? "check_circle" : "error"}
+        </span>
+        {statement.validationOutcome === "VALID"
+          ? "Transactions reconciled"
+          : "The transactions could not be fully reconciled."}
+      </p>
+
+      {statement.validationOutcome === "DISCREPANCY" ? (
+        <p className={styles.difference}>
+          {shortfall
+            ? `Difference: ${shortfall}. This may mean a transaction was missed during extraction.`
+            : "We could not find this statement's opening and closing balances, so the transactions could not be checked."}
+        </p>
+      ) : null}
+
+      <Link className={styles.review} href={`/statements/${batchId}/${statement.id}`}>
+        {statement.validationOutcome === "VALID" ? "View transactions" : "Review"}
+      </Link>
     </div>
   );
 }

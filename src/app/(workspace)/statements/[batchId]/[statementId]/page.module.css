@@ -1,0 +1,100 @@
+/* The transactions one statement produced. §6: detail, on request. */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-stack-md);
+  max-width: 56rem;
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-headline);
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 600;
+  color: var(--color-on-surface);
+}
+
+.subtitle {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--color-secondary);
+}
+
+.empty {
+  margin: 0;
+  color: var(--color-secondary);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.caption {
+  margin-bottom: 0.5rem;
+  text-align: left;
+  color: var(--color-secondary);
+}
+
+.table th {
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  font-weight: 600;
+  color: var(--color-secondary);
+  border-bottom: 1px solid var(--color-outline-variant);
+}
+
+.table td {
+  padding: 0.625rem 0.75rem;
+  vertical-align: top;
+  border-bottom: 1px solid var(--color-outline-variant);
+  color: var(--color-on-surface);
+}
+
+/* Figures line up so a column can be scanned down, and compared with the paper statement. */
+.numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.date {
+  white-space: nowrap;
+  color: var(--color-secondary);
+}
+
+.reference {
+  display: block;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--color-secondary);
+}
+
+td.numeric[data-direction="DEBIT"] {
+  color: var(--color-on-surface);
+}
+
+td.numeric[data-direction="CREDIT"] {
+  color: var(--color-success, #1b6b3a);
+}

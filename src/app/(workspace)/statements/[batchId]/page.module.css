@@ -160,3 +160,69 @@
   opacity: 0.5;
   cursor: default;
 }
+
+/*
+ * The parsing summary. §7 asks for a concise result -- the count, both balances, and
+ * whether it reconciled -- and §8 for the difference where it did not.
+ */
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: var(--color-surface-container-low);
+  border-radius: var(--radius-md);
+}
+
+.balances {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.25rem 1rem;
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.balances dt {
+  color: var(--color-secondary);
+}
+
+.balances dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--color-on-surface);
+}
+
+.reconciled {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+.reconciled[data-outcome="VALID"] {
+  color: var(--color-success, #1b6b3a);
+}
+
+.reconciled[data-outcome="DISCREPANCY"] {
+  color: var(--color-warning, #8a5a00);
+}
+
+.difference {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--color-secondary);
+}
+
+.review {
+  align-self: flex-start;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--color-primary);
+}

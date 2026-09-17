@@ -55,6 +55,34 @@ export interface Validation {
   readonly totals: Totals;
 }
 
+/**
+ * How far a statement is from reconciling: `closing − (opening + credits − debits)`.
+ *
+ * Exported because the summary screen needs the same number, and the row it reads holds all
+ * four inputs. One implementation rather than two, since this is the one piece of arithmetic
+ * the product cannot afford to have disagree with itself — and a stored fifth column that
+ * has to agree with the other four is a column that can stop agreeing with them.
+ *
+ * Null when any end is missing, which is `DISCREPANCY` with nothing to report.
+ */
+export function difference(figures: {
+  openingBalance: bigint | null;
+  closingBalance: bigint | null;
+  totalCredits: bigint | null;
+  totalDebits: bigint | null;
+}): bigint | null {
+  const { openingBalance, closingBalance, totalCredits, totalDebits } = figures;
+  if (
+    openingBalance === null ||
+    closingBalance === null ||
+    totalCredits === null ||
+    totalDebits === null
+  ) {
+    return null;
+  }
+  return closingBalance - (openingBalance + totalCredits - totalDebits);
+}
+
 export function totalsOf(lines: readonly ParsedLine[]): Totals {
   let credits = 0n;
   let debits = 0n;
@@ -167,18 +195,17 @@ function fromBalanceColumn(lines: readonly ParsedLine[]): Balances {
  */
 export function validate(lines: readonly ParsedLine[], balances: Balances): Validation {
   const totals = totalsOf(lines);
-  const { opening, closing } = balances;
 
-  if (opening.minor === null || closing.minor === null) {
-    return { outcome: "DISCREPANCY", differenceMinor: null, totals };
-  }
-
-  const expected = opening.minor + totals.credits - totals.debits;
-  const difference = closing.minor - expected;
+  const differenceMinor = difference({
+    openingBalance: balances.opening.minor,
+    closingBalance: balances.closing.minor,
+    totalCredits: totals.credits,
+    totalDebits: totals.debits,
+  });
 
   return {
-    outcome: difference === 0n ? "VALID" : "DISCREPANCY",
-    differenceMinor: difference,
+    outcome: differenceMinor === 0n ? "VALID" : "DISCREPANCY",
+    differenceMinor,
     totals,
   };
 }
