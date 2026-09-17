@@ -368,12 +368,16 @@ financial movement appears exactly once.
 
 **Dependencies.** C.
 
-**Complete when.** Re-uploading a processed statement produces zero new canonical transactions and
-overlapping statements produce one transaction with two statement lines. Balance validation sets
-`VALID` or `DISCREPANCY` on a `COMPLETED` statement. A scanned-input mismatch goes to manual review
-and is never retried into acceptance. A mapping failing schema validation fails the statement.
-Coverage is recorded. Golden-file fixtures exist over real, redacted, awkward statements, and
-mapping accuracy has been measured at least once.
+**Complete when.** The binary invariants and the measured thresholds in
+`docs/parsing-acceptance.md` all hold, and **six consecutive unseen statements have parsed
+correctly on first attempt with no code change between them**.
+
+That document replaces what this section said before, which was that mapping accuracy be
+"measured at least once". Measuring once is an activity rather than a bar, and it was
+satisfied while the parser was dropping 71% of a real statement — the suite was green
+throughout, because this feature has two kinds of correctness and tests only demonstrate
+one of them. `0003` stakes the whole design on a statement it has never seen being parsed
+correctly, and the only evidence for that is how often it is not.
 
 ---
 

@@ -101,7 +101,7 @@ whichever output looked good in the moment.
 
 | Question                          | Measure                                                                   |
 | --------------------------------- | ------------------------------------------------------------------------- |
-| Does column mapping generalize? | Mapping accuracy on held-out real statements from banks not in the fixture set |
+| Does column mapping generalize? | Mapping accuracy on held-out real statements from banks not in the fixture set. The thresholds and the release bar are in `docs/parsing-acceptance.md`, along with the rule that gives the measurement its meaning: a statement gets **one** first impression, recorded before anything is fixed. Fix first and you have turned the document into training data and destroyed the only evidence it could give. |
 | Which OCR provider?               | Field-level extraction accuracy across clean PDFs, scans, and photographs |
 | Which model for extraction?       | Field accuracy, schema-valid output rate, cost, latency                   |
 | Which matching thresholds?        | Precision, recall, false-positive rate, how often the user is asked       |
