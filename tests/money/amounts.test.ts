@@ -56,6 +56,34 @@ describe("reading a magnitude", () => {
   });
 });
 
+describe("grouping that does not group", () => {
+  it("refuses a number whose groups are the wrong size", () => {
+    // A sample statement printed its opening balance as £40,000,00 -- a typo for £40,000.00
+    // -- and it was read as four million pounds, reporting a statement whose transactions
+    // reconciled to the penny as out by £3,960,000. Refusing it sends the balance to the
+    // fallback ADR 0009 already defines, which gives the right figure.
+    expect(minor("40,000,00")).toBeNull();
+    expect(minor("1,23,4")).toBeNull();
+    expect(minor("12,3456")).toBeNull();
+  });
+
+  it("still accepts both conventions", () => {
+    expect(minor("120,000.00")).toBe(12000000n);
+    expect(minor("1,234,567.89")).toBe(123456789n);
+    expect(minor("1,20,000.00")).toBe(12000000n);
+    expect(minor("12,34,56,789.01")).toBe(12345678901n);
+  });
+
+  it("still accepts a number that needs no grouping at all", () => {
+    expect(minor("999.00")).toBe(99900n);
+    expect(minor("4850")).toBe(485000n);
+  });
+
+  it("checks the whole part, not the fraction", () => {
+    expect(minor("1.234,56", EUR, ",")).toBe(123456n);
+  });
+});
+
 describe("the decimal separator is told, never guessed", () => {
   it("reads a European statement when the mapping says the comma is decimal", () => {
     expect(minor("1.234,56", EUR, ",")).toBe(123456n);

@@ -160,14 +160,19 @@ export function readAmount(
   if (!ONLY_DIGITS_AND_SEPARATORS.test(cleaned)) return null;
 
   const grouping = decimalSeparator === "." ? "," : ".";
-  const ungrouped = cleaned.split(grouping).join("");
 
-  const parts = ungrouped.split(decimalSeparator);
+  const parts = cleaned.split(decimalSeparator);
   // Two decimal points is not an amount we are willing to interpret.
   if (parts.length > 2) return null;
 
-  const whole = parts[0] === "" ? "0" : parts[0];
-  const fraction = parts[1] ?? "";
+  const grouped = parts[0];
+  const fraction = (parts[1] ?? "").split(grouping).join("");
+
+  // Grouping that does not group is a malformed number, not a large one.
+  if (grouped.includes(grouping) && !isWellGrouped(grouped, grouping)) return null;
+
+  const ungrouped = grouped.split(grouping).join("");
+  const whole = ungrouped === "" ? "0" : ungrouped;
   if (!/^[0-9]+$/.test(whole)) return null;
   if (fraction !== "" && !/^[0-9]+$/.test(fraction)) return null;
 
@@ -175,6 +180,36 @@ export function readAmount(
   if (scaled === null) return null;
 
   return { minorUnits: BigInt(whole + scaled), sign, marker };
+}
+
+/**
+ * Whether separators in this number actually group it.
+ *
+ * Western grouping is every three digits; Indian grouping is three for the last group and
+ * two above it. A number matching neither is malformed, and reading it anyway invents a
+ * figure: a sample statement printing its opening balance as `£40,000,00` -- a typo for
+ * `£40,000.00` -- was read as four million pounds, and reported the statement as out by
+ * £3,960,000 when its transactions in fact reconciled to the penny.
+ *
+ * Refusing it sends the balance to the fallback `docs/decisions/0009` already defines: the
+ * running balance column, which on that statement gives exactly £40,000.00. That is the
+ * difference between a wrong number and no number, and only one of them is recoverable.
+ */
+function isWellGrouped(digits: string, grouping: string): boolean {
+  const groups = digits.split(grouping);
+  if (groups.some((group) => !/^[0-9]+$/.test(group))) return false;
+  if (groups[0].length < 1 || groups[0].length > 3) return false;
+
+  const rest = groups.slice(1);
+  if (rest.length === 0) return true;
+
+  // Western: every group after the first is three digits.
+  if (rest.every((group) => group.length === 3)) return true;
+
+  // Indian: the last group is three, and every group between is two.
+  const last = rest[rest.length - 1];
+  const middle = rest.slice(0, -1);
+  return last.length === 3 && middle.every((group) => group.length === 2) && groups[0].length <= 2;
 }
 
 /**
