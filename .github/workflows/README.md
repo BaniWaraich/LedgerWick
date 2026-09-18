@@ -2,11 +2,12 @@
 
 `ci.yml` runs on every pull request and on pushes to `main`.
 
-| Job       | Blocking | What                                                  |
-| --------- | -------- | ----------------------------------------------------- |
-| `verify`  | yes      | typecheck, lint, format check, tests, build           |
-| `hygiene` | no       | knip (dead code), depcheck (unused deps), `npm audit` |
-| `secrets` | yes      | gitleaks over full history                            |
+| Job       | Blocking | What                                                           |
+| --------- | -------- | -------------------------------------------------------------- |
+| `verify`  | yes      | typecheck, lint, format check, tests, build                    |
+| `hygiene` | no       | knip (dead code), depcheck (unused deps), `npm audit`          |
+| `migrate` | yes      | applies pending migrations to production (push to `main` only) |
+| `secrets` | yes      | gitleaks over full history                                     |
 
 `hygiene` is advisory on purpose. Dead-code and dependency reports are noisy on a young
 codebase, and a merge blocked on a false positive teaches people to ignore CI. It reports;
@@ -54,6 +55,35 @@ node -e "const l=require('./package-lock.json'); console.log(['node_modules/@emn
 ```
 
 Both paths should be listed. If they are not, CI will fail.
+
+## `migrate`
+
+Schema changes reach production through this job and nowhere else. A file in
+`migrations/` is inert until something runs it against a database; `npm run db:migrate` is
+hardcoded to `.env.local`, so it only ever updates the database a developer is pointed at.
+Without this job, production drifts silently — which it did, three migrations deep, until
+an upload failed on a missing `content_hash` column.
+
+It runs only on pushes to `main`, after `verify` passes, and serializes on a concurrency
+group so two runs cannot migrate one database at once.
+
+### It does not gate the deploy
+
+Vercel deploys on push independently of GitHub Actions, so this job and the deploy race.
+That is safe while migrations are additive: a new nullable column does no harm whichever
+order the two land in, because the old code never mentions it.
+
+It is **not** safe for a migration that drops a column, renames one, or rewrites data. Ship
+those in two deploys — the schema change first, then the code that depends on it. If that
+ever becomes routine, the real fix is to turn off Vercel's git auto-deploy and deploy from
+CI after this job, so the ordering is guaranteed rather than assumed.
+
+### Required secret
+
+`PRODUCTION_DATABASE_URL_UNPOOLED` — the production branch's **direct** (non-pooled) Neon
+connection string, set in the repository's Actions secrets. Neon's pooler is not reliable
+for DDL. The job fails loudly when the secret is missing, because `drizzle-kit` with an
+empty URL is silent about connecting to nothing.
 
 ## Branch protection
 

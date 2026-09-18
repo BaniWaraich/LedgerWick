@@ -61,6 +61,47 @@ jobs:
       - name: Audit
         run: npm audit --audit-level=high
 
+  migrate:
+    # Schema changes reach production here, and nowhere else. A migration file in
+    # migrations/ does nothing until this runs it; before this job existed, only a
+    # developer running `npm run db:migrate` against .env.local ever applied one, and
+    # production drifted three migrations behind until an upload broke on a missing
+    # column.
+    #
+    # This does not gate the deploy. Vercel deploys on push by itself, so this job and
+    # the deploy race. That is tolerable only while migrations are additive — a new
+    # nullable column is harmless whichever order the two land in. Before merging a
+    # migration that drops or rewrites anything, deploy it in two steps: ship the
+    # schema change on its own, then the code that depends on it.
+    needs: verify
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    concurrency:
+      # Never two migrations against one database at once.
+      group: migrate-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Apply pending migrations
+        # Unpooled: Neon's pooler is not reliable for DDL.
+        env:
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL_UNPOOLED }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "PRODUCTION_DATABASE_URL_UNPOOLED is not set in repository secrets." >&2
+            echo "Without it drizzle-kit connects to nothing and reports success." >&2
+            exit 1
+          fi
+          npx drizzle-kit migrate
+
   secrets:
     runs-on: ubuntu-latest
     steps:
