@@ -139,7 +139,6 @@ export const transactionJudgementsSchema = z
   });
 
 export type TransactionJudgements = z.infer<typeof transactionJudgementsSchema>;
-export type TransactionJudgement = z.infer<typeof judgement>;
 
 export const classifyTransactionsPrompt: PromptDefinition = {
   id: "classify-transactions",
