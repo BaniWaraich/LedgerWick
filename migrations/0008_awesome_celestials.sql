@@ -1,0 +1,1 @@
+ALTER TABLE "clarification_questions" ADD COLUMN "vendor_guess" text;

@@ -95,13 +95,13 @@ export default async function ReconciliationPage() {
       </header>
 
       {open.length > 0 ? (
-        <p className={styles.questions}>
+        <Link className={styles.questions} href="/reconciliation/questions">
           <span className="material-symbols-outlined" aria-hidden="true">
             help
           </span>
           {/* §6's "awaiting answers" stage. It never blocked the run; it is work waiting here. */}
           We need your help with {open.length} {open.length === 1 ? "payment" : "payments"}.
-        </p>
+        </Link>
       ) : null}
 
       {rows.length === 0 ? (

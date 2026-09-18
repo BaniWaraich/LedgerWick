@@ -687,6 +687,16 @@ export const clarificationQuestions = pgTable(
       onDelete: "set null",
     }),
     question: text("question").notNull(),
+    /**
+     * Who the payment looked like it went to, when the question was raised.
+     *
+     * Here rather than derived from the transaction afterwards because the answer has to
+     * generalize to be worth keeping (`docs/domain-model.md §3.14`), and what it
+     * generalizes over is the payee. A narration cannot stand in: `UPI/XYZ/9922/ORDER`
+     * carries a reference number, so keying what we learn on it would teach us something
+     * true of exactly one payment.
+     */
+    vendorGuess: text("vendor_guess"),
     options: jsonb("options"),
     answer: text("answer"),
     answeredAt: timestamp("answered_at", { withTimezone: true }),

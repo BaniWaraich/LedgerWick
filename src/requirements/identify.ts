@@ -123,6 +123,8 @@ export async function identifyRequirements(
             canonicalTransactionId: subject.id,
             reconciliationRunId: run.id,
             question: judgement.clarification.question,
+            // Kept so the answer has something to generalize over. See the column comment.
+            vendorGuess: judgement.vendorGuess,
             options: judgement.clarification.options,
           });
           questionsRaised += 1;
