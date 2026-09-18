@@ -50,4 +50,16 @@ export const statementBound = eventType("statement/bound", {
   schema: workspaceEvent.extend({ statementId: z.uuid() }),
 });
 
+/**
+ * Work out which of this workspace's payments need a supporting document.
+ *
+ * Separate from `statement/parsed` because a reconciliation run is about the workspace and
+ * not about any statement -- `identifying-invoices.md §8` requires the analysis to span
+ * every account the business has, since "is this a transfer to my own account" is a
+ * question no single statement can answer.
+ */
+export const reconciliationRequested = eventType("reconciliation/requested", {
+  schema: workspaceEvent,
+});
+
 export const inngest = new Inngest({ id: "ledgerwick" });

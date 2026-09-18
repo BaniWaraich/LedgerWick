@@ -15,7 +15,11 @@ import { parseStatement, recordTerminalParseFailure } from "../../statements/par
 import { extractPdfText } from "../../statements/pdf-text";
 import { readScanned } from "../../statements/scanned-reader";
 import { getDocumentStore } from "../../storage/blob-store";
-import { inngest, statementBound } from "../client";
+import { eq } from "drizzle-orm";
+
+import { batchIsSettled } from "../../requirements/batch";
+import { bankStatements } from "../../db/schema";
+import { inngest, reconciliationRequested, statementBound } from "../client";
 
 export const parseStatementFunction = inngest.createFunction(
   {
@@ -45,6 +49,11 @@ export const parseStatementFunction = inngest.createFunction(
       const scope = await openWorkspaceForJob(userId, workspaceId);
 
       await recordTerminalParseFailure(scope, statementId);
+
+      // A batch whose last file failed is still a finished batch. Staying quiet here would
+      // mean the run waits for a success that is never coming, and the other files in the
+      // upload would never be reconciled because one of them was unreadable.
+      await announceParsed(scope, statementId, workspaceId, userId);
     },
   },
   async ({ event, step }) => {
@@ -62,5 +71,58 @@ export const parseStatementFunction = inngest.createFunction(
         event.data.statementId,
       );
     });
+
+    /*
+     * Whether the batch this file belonged to is now finished.
+     *
+     * A query rather than a decision, which is why it is allowed to live in the shell --
+     * `batchIsSettled` holds the rule about what "finished" means, including that a
+     * statement waiting for the user to pick an account does not count as unfinished.
+     */
+    const settled = await step.run("batch-settled", async () => {
+      const scope = await openWorkspaceForJob(event.data.userId, event.data.workspaceId);
+      const statement = await scope.selectOne(
+        bankStatements,
+        eq(bankStatements.id, event.data.statementId),
+      );
+      if (!statement) return null;
+
+      return (await batchIsSettled(scope, statement.uploadBatchId))
+        ? statement.uploadBatchId
+        : null;
+    });
+
+    // Sent through `step` for the reason `identify-statement.ts` gives: a crash between
+    // finishing the parse and starting the run would otherwise leave a workspace full of
+    // transactions that nothing ever judges.
+    if (settled) {
+      await step.sendEvent("identify-requirements", [
+        reconciliationRequested.create({
+          workspaceId: event.data.workspaceId,
+          userId: event.data.userId,
+        }),
+      ]);
+    }
   },
 );
+
+/**
+ * Tell the system this statement has stopped moving, from the failure path.
+ *
+ * `onFailure` runs outside the step machinery, so this sends directly. The event is the
+ * same one the success path raises; what happens next is a question about the batch, and
+ * the batch does not care why a file stopped.
+ */
+async function announceParsed(
+  scope: Awaited<ReturnType<typeof openWorkspaceForJob>>,
+  statementId: string,
+  workspaceId: string,
+  userId: string,
+): Promise<void> {
+  const statement = await scope.selectOne(bankStatements, eq(bankStatements.id, statementId));
+  if (!statement) return;
+
+  if (!(await batchIsSettled(scope, statement.uploadBatchId))) return;
+
+  await inngest.send(reconciliationRequested.create({ workspaceId, userId }));
+}

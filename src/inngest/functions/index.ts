@@ -6,7 +6,12 @@
  * through an event that quietly goes nowhere.
  */
 
+import { identifyRequirementsFunction } from "./identify-requirements";
 import { identifyStatementFunction } from "./identify-statement";
 import { parseStatementFunction } from "./parse-statement";
 
-export const functions = [identifyStatementFunction, parseStatementFunction];
+export const functions = [
+  identifyRequirementsFunction,
+  identifyStatementFunction,
+  parseStatementFunction,
+];
