@@ -380,3 +380,90 @@ function reference(text: string): string | null {
   const trimmed = text.trim();
   return trimmed === "" || EMPTY_REFERENCE.test(trimmed) ? null : trimmed;
 }
+
+/**
+ * Transactions sitting above `firstDataRow`, which the walk never looked at.
+ *
+ * spec: docs/parsing-acceptance.md
+ *
+ * `walkStatement` starts at `mapping.firstDataRow` and everything above it is invisible to
+ * it — not skipped, not counted, not recorded. That is the one way this parser can lose
+ * transactions and leave no evidence at all, and the balance check does not cover it: with
+ * the early rows gone, `fromBalanceColumn` derives the opening balance from the first row
+ * that survived, so the statement reconciles against its own truncation and reports a
+ * plausible difference instead of a missing quarter of the year.
+ *
+ * So the rows above the line are tested against the only definition of a transaction this
+ * system has — its own walk — and the count is reported.
+ *
+ * ## Reported, never corrected
+ *
+ * This returns a finding. It does not move `firstDataRow`, admit the rows, or change the
+ * outcome. `docs/decisions/0003` gives structure to the model and values to the code, so
+ * code that overruled the mapping would be code deciding structure. And a silent correction
+ * would destroy the thing `docs/parsing-acceptance.md` is built on: a statement gets one
+ * first impression, and a mapping quietly patched at runtime can never be shown to have
+ * been wrong.
+ *
+ * ## Why the test is stricter than the walk's
+ *
+ * All three of a printed date, an unambiguous non-zero amount, and a description must be
+ * present. The walk itself is more generous — it carries a date forward from the row above,
+ * because Bank of Ireland prints one per day — but there is nothing above `firstDataRow` to
+ * carry from, and inferring one here would be inventing the evidence this check exists to
+ * find.
+ *
+ * The strictness is the whole design. A check that fired on every statement with a "balance
+ * brought forward" line above its table would be ignored within a week and would then be
+ * worse than nothing. A header block, a bank address and a summary box each fail at least
+ * one of the three tests; a real transaction fails none.
+ */
+export function transactionLikeRowsBefore(
+  grid: Grid,
+  mapping: ColumnMapping,
+  currency: Currency,
+  period?: StatementPeriod,
+): { rows: number[]; firstDate: IsoDate | null; lastDate: IsoDate | null } {
+  const cell = (row: number, column: number | null): string =>
+    column === null ? "" : (grid[row]?.[column] ?? "");
+
+  const amountAt = (row: number, column: number | null): Amount | null =>
+    column === null ? null : readAmount(cell(row, column), currency, mapping.decimalSeparator);
+
+  const descriptionOn = (row: number): string =>
+    mapping.descriptionColumns
+      .map((column) => cell(row, column).trim())
+      .filter((part) => part !== "")
+      .join(" ");
+
+  const rows: number[] = [];
+  const dates: IsoDate[] = [];
+
+  // Below the header row where there is one: a header's own cells are labels, and a column
+  // called "Amount" is not an amount. Where the model named none, everything above the data
+  // is fair game.
+  const from = (mapping.headerRow ?? -1) + 1;
+
+  for (let row = from; row < mapping.firstDataRow && row < grid.length; row += 1) {
+    const date = readDate(cell(row, mapping.dateColumn), mapping.dateOrder, period);
+    if (!date) continue;
+
+    // A string here is `readMovement` reporting why the row is not one movement -- two
+    // amounts, or none. Either way it is not the unambiguous transaction this check requires.
+    const movement = readMovement(mapping, amountAt, cell, row);
+    if (typeof movement === "string") continue;
+
+    if (descriptionOn(row).trim() === "") continue;
+
+    rows.push(row);
+    dates.push(date);
+  }
+
+  dates.sort();
+
+  return {
+    rows,
+    firstDate: dates[0] ?? null,
+    lastDate: dates[dates.length - 1] ?? null,
+  };
+}

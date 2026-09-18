@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { ColumnMapping } from "../../src/ai/prompts/map-statement-columns.v1";
 import { currencyFor } from "../../src/money/currencies";
-import { walkStatement } from "../../src/statements/walk";
+import { transactionLikeRowsBefore, walkStatement } from "../../src/statements/walk";
 
 const INR = currencyFor("INR")!;
 
@@ -434,5 +434,104 @@ describe("a continuation row whose column the mapping did not name", () => {
     ]);
 
     expect(lines[0].description).toBe("ACME");
+  });
+});
+
+/*
+ * spec: docs/parsing-acceptance.md
+ *
+ * The walk starts at `firstDataRow`, so a mapping that puts that line too low deletes
+ * transactions leaving no trace — not skipped, not counted, and invisible to the balance
+ * check, which derives the opening balance from whatever row survived first. This is the
+ * check that notices. It reports; it never admits the rows or moves the line.
+ */
+describe("transactions above firstDataRow", () => {
+  const txn = (date: string, narration: string, out: string) => [
+    date,
+    narration,
+    "",
+    out,
+    "",
+    "9,000.00",
+  ];
+
+  it("finds real transactions the walk was told to start below", () => {
+    const grid = [
+      HEADER,
+      txn("01/12/2025", "ACME TRADING", "4,850.00"),
+      txn("04/12/2025", "BETA SUPPLIES", "1,200.00"),
+      txn("09/12/2025", "GAMMA LTD", "3,000.00"),
+      txn("02/04/2026", "DELTA CO", "2,000.00"),
+    ];
+
+    const found = transactionLikeRowsBefore(grid, { ...PAIRED, firstDataRow: 4 }, INR);
+
+    expect(found.rows).toEqual([1, 2, 3]);
+    expect(found.firstDate).toBe("2025-12-01");
+    expect(found.lastDate).toBe("2025-12-09");
+  });
+
+  it("finds nothing when the mapping is right", () => {
+    const grid = [HEADER, txn("01/12/2025", "ACME TRADING", "4,850.00")];
+    expect(transactionLikeRowsBefore(grid, PAIRED, INR).rows).toEqual([]);
+  });
+
+  /*
+   * The guard that decides whether this check is worth having. A statement whose table is
+   * preceded by an address block and a brought-forward line must stay silent, or the finding
+   * is noise and gets ignored.
+   */
+  it("ignores a header block, an address and a brought-forward balance", () => {
+    const grid = [
+      ["Statement of Account", "", "", "", "", ""],
+      ["Anytown Bank plc", "1 High Street", "", "", "", ""],
+      ["Period", "01/12/2025 to 18/09/2026", "", "", "", ""],
+      ["01/12/2025", "BALANCE BROUGHT FORWARD", "", "", "", "9,000.00"],
+      HEADER,
+      txn("02/12/2025", "ACME TRADING", "4,850.00"),
+    ];
+
+    const found = transactionLikeRowsBefore(
+      grid,
+      { ...PAIRED, headerRow: 4, firstDataRow: 5 },
+      INR,
+    );
+    expect(found.rows).toEqual([]);
+  });
+
+  it("does not count a row whose date is not printed on it", () => {
+    // The walk carries a date forward from the row above; there is nothing above this line to
+    // carry from, so inferring one would invent the evidence the check exists to find.
+    const grid = [
+      HEADER,
+      ["", "ACME TRADING", "", "4,850.00", "", "9,000.00"],
+      txn("02/04/2026", "DELTA CO", "2,000.00"),
+    ];
+    expect(transactionLikeRowsBefore(grid, { ...PAIRED, firstDataRow: 2 }, INR).rows).toEqual([]);
+  });
+
+  it("does not count a row with a date but no amount", () => {
+    const grid = [
+      HEADER,
+      ["01/12/2025", "PAGE 1 OF 4", "", "", "", ""],
+      txn("02/04/2026", "DELTA CO", "2,000.00"),
+    ];
+    expect(transactionLikeRowsBefore(grid, { ...PAIRED, firstDataRow: 2 }, INR).rows).toEqual([]);
+  });
+
+  it("does not count a row with a date and an amount but no description", () => {
+    const grid = [
+      HEADER,
+      ["01/12/2025", "", "", "4,850.00", "", "9,000.00"],
+      txn("02/04/2026", "DELTA CO", "2,000.00"),
+    ];
+    expect(transactionLikeRowsBefore(grid, { ...PAIRED, firstDataRow: 2 }, INR).rows).toEqual([]);
+  });
+
+  it("looks at nothing when the data starts directly under the header", () => {
+    const grid = [HEADER, txn("01/12/2025", "ACME TRADING", "4,850.00")];
+    expect(
+      transactionLikeRowsBefore(grid, { ...PAIRED, headerRow: 0, firstDataRow: 1 }, INR).rows,
+    ).toEqual([]);
   });
 });

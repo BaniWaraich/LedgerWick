@@ -1,0 +1,187 @@
+/**
+ * What one parse actually did, in a form a person can read afterwards.
+ *
+ * spec: docs/parsing-acceptance.md
+ *
+ * A parse reports a line count and a difference, and neither of those distinguishes "this is
+ * what the document says" from "this is what we managed to read". Statement #5 in the
+ * acceptance log is what this module exists for: 404 transactions and a plausible €8,000
+ * gap, with no way to tell from the outside whether a quarter of the year had been dropped.
+ * Bank of Ireland did the same thing earlier with 238 rows, which is why the log says in as
+ * many words that "the balance check cannot be relied on to notice".
+ *
+ * The blind spot it is pointed at is `walkStatement`, which iterates from
+ * `mapping.firstDataRow`. Rows above that line are never visited and never recorded as
+ * skipped, so a truncated walk and a complete one leave identical evidence. The report
+ * states `firstDataRow` and how many rows sit above it, which is the smallest thing that
+ * makes the two distinguishable.
+ *
+ * ## Why this is both logged and stored
+ *
+ * They fail in opposite directions, so neither covers the other.
+ *
+ * `parseStatement` writes its results in one update at the very end, after the lines and the
+ * promotion. A statement killed by the platform's function timeout — or failed down any of
+ * the `fail()` branches — stores nothing at all, and that is precisely the parse whose walk
+ * you most want to see. Only a log line survives it, for the same reason
+ * `src/observability/timing.ts` gives about durations: the recording has to have already
+ * happened.
+ *
+ * A statement that completed with a discrepancy is the opposite case. It is sitting in the
+ * database being looked at, possibly days later, long after the log line has aged out of
+ * retention. There the durable record is the one that answers the question.
+ *
+ * ## It never decides anything
+ *
+ * Nothing here changes an outcome, a mapping or a line. `docs/decisions/0003` makes
+ * structure the model's answer and values the code's, and a report that quietly corrected a
+ * mapping would be code deciding structure. `docs/parsing-acceptance.md` adds the sharper
+ * reason: a statement gets one first impression, and a silent correction destroys the
+ * evidence that the mapping was ever wrong.
+ */
+
+import type { ColumnMapping } from "../ai/prompts/map-statement-columns.v1";
+import type { Balances, Validation } from "./validate";
+import type { SkippedRow, Walk } from "./walk";
+
+/**
+ * How many individual skipped rows are kept.
+ *
+ * A badly mapped statement can skip every row it has, and storing five thousand of them in a
+ * JSON column on every upload would cost more than it explains. The histogram below is exact
+ * regardless of this cap and is what the reasoning actually runs on; the individual rows are
+ * for going and looking at the document, and the first two hundred are enough to do that.
+ */
+const MAX_SKIPPED_ROWS = 200;
+
+/** Where a balance came from, as `validate.ts` reports it. */
+type BalanceSource = Balances["opening"]["source"];
+
+/** Rows above `firstDataRow` that look like transactions the walk never saw. */
+export interface ExcludedRows {
+  readonly count: number;
+  readonly firstRow: number;
+  readonly lastRow: number;
+  readonly firstDate: string | null;
+  readonly lastDate: string | null;
+}
+
+export interface ParseReport {
+  /** Null on the scanned path, which has no grid to count. */
+  readonly gridRows: number | null;
+  readonly headerRow: number | null;
+  readonly firstDataRow: number | null;
+  /** Rows the walk never visited because they precede `firstDataRow`. */
+  readonly rowsBeforeFirstDataRow: number;
+  readonly lines: number;
+  readonly skipped: {
+    readonly total: number;
+    /** Exact for every skipped row, whatever the cap did to the list below. */
+    readonly byReason: Record<string, number>;
+    readonly rows: SkippedRow[];
+    readonly truncated: boolean;
+  };
+  /** The span of what was extracted — never the period the document declared. */
+  readonly extracted: { readonly firstDate: string | null; readonly lastDate: string | null };
+  readonly opening: { readonly minor: string | null; readonly source: BalanceSource };
+  readonly closing: { readonly minor: string | null; readonly source: BalanceSource };
+  readonly differenceMinor: string | null;
+  readonly outcome: Validation["outcome"];
+  /** Filled on the text path only. Null means the check did not run, not that it found none. */
+  readonly excluded: ExcludedRows | null;
+}
+
+/**
+ * Assemble the report from what the parse already has.
+ *
+ * Everything here is read rather than recomputed. A report that did its own arithmetic could
+ * disagree with the row it describes, and then there would be two answers to "did this
+ * reconcile" — which is the objection `validate.ts` already makes about storing a fifth
+ * balance column beside the four it derives from.
+ */
+export function parseReport(input: {
+  grid: { length: number } | null;
+  mapping: ColumnMapping | null;
+  walk: Walk;
+  balances: Balances;
+  validation: Validation;
+  excluded: ExcludedRows | null;
+}): ParseReport {
+  const { grid, mapping, walk, balances, validation, excluded } = input;
+
+  const byReason: Record<string, number> = {};
+  for (const row of walk.skipped) byReason[row.reason] = (byReason[row.reason] ?? 0) + 1;
+
+  // Sorted, because the walk emits rows in grid order but a re-derive can produce a second
+  // attempt whose lines start elsewhere, and a range is only readable if the ends are the ends.
+  const dates = walk.lines.map((line) => line.valueDate).sort();
+
+  return {
+    gridRows: grid?.length ?? null,
+    headerRow: mapping?.headerRow ?? null,
+    firstDataRow: mapping?.firstDataRow ?? null,
+    rowsBeforeFirstDataRow: mapping?.firstDataRow ?? 0,
+    lines: walk.lines.length,
+    skipped: {
+      total: walk.skipped.length,
+      byReason,
+      rows: walk.skipped.slice(0, MAX_SKIPPED_ROWS),
+      truncated: walk.skipped.length > MAX_SKIPPED_ROWS,
+    },
+    extracted: { firstDate: dates[0] ?? null, lastDate: dates[dates.length - 1] ?? null },
+    opening: { minor: balances.opening.minor?.toString() ?? null, source: balances.opening.source },
+    closing: { minor: balances.closing.minor?.toString() ?? null, source: balances.closing.source },
+    differenceMinor: validation.differenceMinor?.toString() ?? null,
+    outcome: validation.outcome,
+    excluded,
+  };
+}
+
+/**
+ * Put the report where a killed function still leaves it behind.
+ *
+ * One line, in the field format `src/observability/timing.ts` established, so that the whole
+ * parse reads out of `vercel logs | grep` rather than out of a JSON blob nobody unpacks. The
+ * skipped rows go on a second line and only when there are any, because that list is the one
+ * part of this that is not a fixed size.
+ */
+export function logParseReport(statementId: string, report: ParseReport): void {
+  const fields = [
+    `statement=${statementId}`,
+    `gridRows=${report.gridRows}`,
+    `headerRow=${report.headerRow}`,
+    `firstDataRow=${report.firstDataRow}`,
+    `before=${report.rowsBeforeFirstDataRow}`,
+    `lines=${report.lines}`,
+    `skipped=${report.skipped.total}`,
+    `first=${report.extracted.firstDate}`,
+    `last=${report.extracted.lastDate}`,
+    `opening=${report.opening.minor}/${report.opening.source}`,
+    `closing=${report.closing.minor}/${report.closing.source}`,
+    `diff=${report.differenceMinor}`,
+    `outcome=${report.outcome}`,
+    `excludedLike=${report.excluded?.count ?? "n/a"}`,
+  ];
+
+  console.log(`[parse] ${fields.join(" ")}`);
+
+  if (report.skipped.total > 0) {
+    const reasons = Object.entries(report.skipped.byReason)
+      .map(([reason, count]) => `${count}x ${reason}`)
+      .join(", ");
+    const rows = report.skipped.rows.map((row) => row.rowIndex).join(",");
+    console.log(
+      `[parse] statement=${statementId} skippedBy="${reasons}" rows=${rows}${
+        report.skipped.truncated ? ",…" : ""
+      }`,
+    );
+  }
+
+  if (report.excluded) {
+    const { count, firstRow, lastRow, firstDate, lastDate } = report.excluded;
+    console.log(
+      `[parse] statement=${statementId} excludedLike=${count} rows=${firstRow}-${lastRow} ` +
+        `dates=${firstDate}..${lastDate}`,
+    );
+  }
+}

@@ -36,6 +36,7 @@ import { and, isNotNull, ne } from "drizzle-orm";
 import { bankAccounts, bankStatements, statementLines } from "../db/schema";
 import type { WorkspaceScope } from "../db/workspace-scope";
 import { timed } from "../observability/timing";
+import { logParseReport, parseReport, type ExcludedRows } from "./parse-report";
 import { currencyFor, type Currency } from "../money/currencies";
 import { columnMappingSchema, type ColumnMapping } from "../ai/prompts/map-statement-columns.v1";
 import type { DocumentStore } from "../storage/document-store";
@@ -43,6 +44,7 @@ import type { Grid } from "./csv";
 import type { MapColumns, ReadScanned } from "./parse-contracts";
 import { promoteStatement } from "./promote";
 import { linesFromScanned } from "./scanned";
+import { transactionLikeRowsBefore } from "./walk";
 import type { StatementPeriod } from "./dates";
 import { readStatementSource, type ExtractPdfText } from "./source";
 import {
@@ -83,6 +85,8 @@ interface Attempt {
   readonly balances: Balances;
   readonly validation: Validation;
   readonly mapping: ColumnMapping | null;
+  /** The grid this attempt read, for the report. Null on the scanned path, which has none. */
+  readonly grid: Grid | null;
 }
 
 /**
@@ -179,6 +183,36 @@ export async function parseStatement(
     return;
   }
 
+  /*
+   * What this parse did, recorded before anything can go wrong with the rest of it.
+   *
+   * Above the zero-line return on purpose: a parse that found nothing is the most
+   * informative one there is, and until now it failed the statement having said nothing
+   * about why. Above the writes too, because those are what the platform's function timeout
+   * interrupts, and a report that only survives a successful parse is missing exactly the
+   * cases it was built for.
+   */
+  const excluded =
+    attempt.grid && attempt.mapping
+      ? excludedRows(attempt.grid, attempt.mapping, currency, declared)
+      : null;
+
+  const report = parseReport({
+    grid: attempt.grid,
+    mapping: attempt.mapping,
+    walk: attempt.walk,
+    balances: attempt.balances,
+    validation: attempt.validation,
+    excluded,
+  });
+
+  // Never lets a reporting bug fail a parse. Nothing here is load-bearing for the statement.
+  try {
+    logParseReport(statementId, report);
+  } catch {
+    /* empty */
+  }
+
   if (attempt.walk.lines.length === 0) {
     // Nothing to promote, nothing to derive a period from, and §7 requires transactions for
     // a statement to be considered successfully processed at all.
@@ -211,12 +245,19 @@ export async function parseStatement(
       totalCredits: attempt.validation.totals.credits,
       totalDebits: attempt.validation.totals.debits,
       lineCount: attempt.walk.lines.length,
+      /*
+       * `mapping` is the key `pinnedMapping` reads back, and the four beside it are what the
+       * summary screen has always read. The report is added alongside rather than replacing
+       * them: a stored shape is a contract with rows already in the database, and the old
+       * keys cost a few bytes against having to migrate JSON that a live screen depends on.
+       */
       columnMapping: {
         mapping: attempt.mapping,
         openingBalanceSource: attempt.balances.opening.source,
         closingBalanceSource: attempt.balances.closing.source,
         skippedRows: attempt.walk.skipped.length,
         differenceMinor: attempt.validation.differenceMinor?.toString() ?? null,
+        report,
       },
       ...coverage,
     },
@@ -250,7 +291,7 @@ async function readAsText(
   if (pinned) {
     const walk = walkStatement(grid, pinned, currency, period);
     const balances = balancesFromGrid(grid, pinned, walk.lines, currency);
-    return { walk, balances, validation: validate(walk.lines, balances), mapping: pinned };
+    return { walk, balances, validation: validate(walk.lines, balances), mapping: pinned, grid };
   }
 
   const first = await attemptText(deps, grid, currency, undefined, period);
@@ -280,7 +321,13 @@ async function attemptText(
   const walk = walkStatement(grid, mapped.value, currency, period);
   const balances = balancesFromGrid(grid, mapped.value, walk.lines, currency);
 
-  return { walk, balances, validation: validate(walk.lines, balances), mapping: mapped.value };
+  return {
+    walk,
+    balances,
+    validation: validate(walk.lines, balances),
+    mapping: mapped.value,
+    grid,
+  };
 }
 
 /**
@@ -302,7 +349,7 @@ async function readAsScan(
   const walk = linesFromScanned(read.value, currency, period);
   const balances = balancesFromScanned(read.value, walk.lines, currency);
 
-  return { walk, balances, validation: validate(walk.lines, balances), mapping: null };
+  return { walk, balances, validation: validate(walk.lines, balances), mapping: null, grid: null };
 }
 
 /**
@@ -399,4 +446,28 @@ async function fail(scope: WorkspaceScope, statementId: string, reason: string):
     { state: "FAILED", failureReason: reason },
     eq(bankStatements.id, statementId),
   );
+}
+
+/**
+ * Transactions the walk never saw, as the report records them.
+ *
+ * A thin adapter over `transactionLikeRowsBefore`, here rather than in `walk.ts` because the
+ * shape it returns is the report's, and `walk.ts` should not know what a report looks like.
+ */
+function excludedRows(
+  grid: Grid,
+  mapping: ColumnMapping,
+  currency: Currency,
+  period: StatementPeriod | undefined,
+): ExcludedRows | null {
+  const found = transactionLikeRowsBefore(grid, mapping, currency, period);
+  if (found.rows.length === 0) return null;
+
+  return {
+    count: found.rows.length,
+    firstRow: found.rows[0],
+    lastRow: found.rows[found.rows.length - 1],
+    firstDate: found.firstDate,
+    lastDate: found.lastDate,
+  };
 }

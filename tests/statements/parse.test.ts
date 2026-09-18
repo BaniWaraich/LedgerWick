@@ -597,3 +597,58 @@ describe("the mapping is pinned to the document", () => {
     expect((await second.statement()).state).toBe("COMPLETED");
   });
 });
+
+/*
+ * spec: docs/parsing-acceptance.md
+ *
+ * A parse that says "404 transactions, discrepancy of 8,000" has not said whether it read
+ * the document or a piece of it. These assert the record that answers that, and that keeping
+ * it changes nothing about the parse itself.
+ */
+describe("the report a parse leaves behind", () => {
+  it("stores what it read alongside the mapping", async () => {
+    const t = await harness();
+    await t.run();
+
+    const row = await t.statement();
+    expect(row.columnMapping).toMatchObject({
+      report: { lines: 2, outcome: "VALID", rowsBeforeFirstDataRow: 1 },
+    });
+  });
+
+  it("records the span of what it extracted, not the period the document declared", async () => {
+    const t = await harness({ declaredPeriod: true });
+    await t.run();
+
+    const row = await t.statement();
+    const report = (row.columnMapping as { report: { extracted: Record<string, string> } }).report;
+
+    // The declared period runs to the end of the month; the rows do not. The screen showed the
+    // first of those and the database held the second, and nothing reconciled them.
+    expect(report.extracted.lastDate).not.toBe(row.periodEnd === null ? "" : "2023-08-31");
+    expect(report.extracted.firstDate).toBe("2023-08-01");
+  });
+
+  it("keeps the keys the summary screen already reads", async () => {
+    // The stored shape is a contract with rows already in the database, so the report is
+    // added beside the old keys rather than replacing them.
+    const t = await harness();
+    await t.run();
+
+    const row = await t.statement();
+    expect(row.columnMapping).toMatchObject({
+      skippedRows: 0,
+      openingBalanceSource: expect.anything(),
+      closingBalanceSource: expect.anything(),
+    });
+  });
+
+  it("does not change the outcome by being written", async () => {
+    const t = await harness();
+    await t.run();
+
+    const row = await t.statement();
+    expect(row.state).toBe("COMPLETED");
+    expect(row.validationOutcome).toBe("VALID");
+  });
+});
