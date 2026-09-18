@@ -213,7 +213,40 @@ automation has done what it can and the remainder is the user's.
 
 ---
 
-## 5. Retired state names
+## 5. Clarification Question
+
+A question raised for the Business Owner when identification cannot determine what a
+transaction is on its own (`docs/domain-model.md §3.15`).
+
+```text
+OPEN → ANSWERED
+```
+
+| State      | Terminal | Meaning                                                                |
+| ---------- | -------- | ---------------------------------------------------------------------- |
+| `OPEN`     | no       | Raised and waiting. The user may not have seen it yet.                 |
+| `ANSWERED` | yes      | The user answered. The answer is recorded against the question.        |
+
+**This is not an enum.** Unlike every other state machine here, the state is derived from
+whether `answered_at` is set. Two states with no intermediate and no way back do not earn a
+column of their own, and a second field that must agree with the first is a second thing to
+get wrong. Named here because a state must be in this document to exist at all, not because
+it needs storage.
+
+Three rules that are properties of this machine rather than of any workflow:
+
+- **A run never waits on it.** `identifying-invoices.md §6` makes "awaiting answers" a
+  non-blocking stage, and `docs/architecture.md §12C` forbids a background workflow suspended
+  on a human. Identification raises the question and continues.
+- **An unanswered question outlives its run.** The user may be away when it is raised. A run
+  reaching `COMPLETED` or `FAILED` never closes, discards or expires an `OPEN` question.
+- **Answering is not the same as learning.** An answer becomes Business Knowledge only where
+  it generalizes beyond the transaction that prompted it (`docs/domain-model.md` invariant
+  18). `ANSWERED` records that the user replied, not that anything was written elsewhere.
+
+---
+
+## 6. Retired state names
 
 These appear in earlier revisions of the workflow documents. They map onto the above.
 

@@ -588,8 +588,29 @@ export const invoiceRequirements = pgTable(
       .notNull()
       .references(() => canonicalTransactions.id, { onDelete: "cascade" }),
     state: requirementStateEnum("state").notNull().default("IDENTIFIED"),
+    /**
+     * The run that identified this requirement.
+     *
+     * `set null` rather than `cascade`: a run is a record of work performed and is not a
+     * source of truth about the requirement's state (docs/domain-model.md §3.13). Deleting
+     * the history must never delete the work.
+     */
+    reconciliationRunId: uuid("reconciliation_run_id").references(() => reconciliationRuns.id, {
+      onDelete: "set null",
+    }),
     /** Why a document is believed to be required, in the user's language. */
     reason: text("reason"),
+    /**
+     * Who the payment looks like it went to, as identification read it.
+     *
+     * Text rather than a `vendors` FK on purpose. At this point the name is an unconfirmed
+     * inference, and `vendorAliases.confirmed` above draws the line this respects: a guess
+     * may inform the work of the run that produced it, but it is not persisted as fact. A
+     * real vendor record is created later, from a decision the user confirmed.
+     */
+    vendorGuess: text("vendor_guess"),
+    /** What the payment appears to be, in the business's terms. identifying-invoices §13. */
+    businessContext: text("business_context"),
     resolutionMethod: resolutionMethodEnum("resolution_method"),
     resolvedDocumentId: uuid("resolved_document_id").references(() => supportingDocuments.id, {
       onDelete: "set null",
@@ -661,6 +682,10 @@ export const clarificationQuestions = pgTable(
       () => canonicalTransactions.id,
       { onDelete: "cascade" },
     ),
+    /** The run that raised it. `set null` for the reason given on the requirement. */
+    reconciliationRunId: uuid("reconciliation_run_id").references(() => reconciliationRuns.id, {
+      onDelete: "set null",
+    }),
     question: text("question").notNull(),
     options: jsonb("options"),
     answer: text("answer"),

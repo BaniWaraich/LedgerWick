@@ -25,8 +25,10 @@ import {
   bankAccounts,
   bankStatements,
   canonicalTransactions,
+  clarificationQuestions,
   invoiceRequirements,
   invoices,
+  reconciliationRuns,
 } from "../../src/db/schema";
 
 let h: TestDb;
@@ -326,6 +328,35 @@ describe("invoice requirements", () => {
         h.db.insert(invoiceRequirements).values({ workspaceId, canonicalTransactionId: txn.id }),
       "invoice_requirements_transaction_idx",
     );
+  });
+
+  // spec: docs/domain-model.md §3.13
+  it("outlives the run that identified it", async () => {
+    // A run is a record of work performed, not a source of truth about the requirement's
+    // state. So the FK is `set null`, and deleting run history must never take the
+    // requirements and questions with it -- which `cascade` silently would.
+    const txn = await insertTransaction();
+    const [run] = await h.db.insert(reconciliationRuns).values({ workspaceId }).returning();
+
+    await h.db
+      .insert(invoiceRequirements)
+      .values({ workspaceId, canonicalTransactionId: txn.id, reconciliationRunId: run.id });
+    await h.db.insert(clarificationQuestions).values({
+      workspaceId,
+      canonicalTransactionId: txn.id,
+      reconciliationRunId: run.id,
+      question: "Is XYZ Services a business vendor?",
+    });
+
+    await h.db.delete(reconciliationRuns).where(eq(reconciliationRuns.id, run.id));
+
+    const [req] = await h.db.select().from(invoiceRequirements);
+    const [question] = await h.db.select().from(clarificationQuestions);
+
+    expect(req).toBeDefined();
+    expect(req.reconciliationRunId).toBeNull();
+    expect(question).toBeDefined();
+    expect(question.reconciliationRunId).toBeNull();
   });
 
   it("starts in IDENTIFIED", async () => {
