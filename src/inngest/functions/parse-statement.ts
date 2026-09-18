@@ -17,7 +17,7 @@ import { readScanned } from "../../statements/scanned-reader";
 import { getDocumentStore } from "../../storage/blob-store";
 import { eq } from "drizzle-orm";
 
-import { batchIsSettled } from "../../requirements/batch";
+import { reconciliationDue } from "../../requirements/batch";
 import { bankStatements } from "../../db/schema";
 import { inngest, reconciliationRequested, statementBound } from "../client";
 
@@ -52,7 +52,9 @@ export const parseStatementFunction = inngest.createFunction(
 
       // A batch whose last file failed is still a finished batch. Staying quiet here would
       // mean the run waits for a success that is never coming, and the other files in the
-      // upload would never be reconciled because one of them was unreadable.
+      // upload would never be reconciled because one of them was unreadable. What the
+      // announcement no longer does is start a run for a batch where nothing succeeded --
+      // see `reconciliationDue`.
       await announceParsed(scope, statementId, workspaceId, userId);
     },
   },
@@ -73,13 +75,14 @@ export const parseStatementFunction = inngest.createFunction(
     });
 
     /*
-     * Whether the batch this file belonged to is now finished.
+     * Whether this file's batch has finished and has anything to show for it.
      *
      * A query rather than a decision, which is why it is allowed to live in the shell --
-     * `batchIsSettled` holds the rule about what "finished" means, including that a
-     * statement waiting for the user to pick an account does not count as unfinished.
+     * `reconciliationDue` holds both halves of the rule: what "finished" means, including
+     * that a statement waiting for the user to pick an account does not count as unfinished,
+     * and that a batch which produced no transactions has nothing for a run to judge.
      */
-    const settled = await step.run("batch-settled", async () => {
+    const due = await step.run("batch-settled", async () => {
       const scope = await openWorkspaceForJob(event.data.userId, event.data.workspaceId);
       const statement = await scope.selectOne(
         bankStatements,
@@ -87,7 +90,7 @@ export const parseStatementFunction = inngest.createFunction(
       );
       if (!statement) return null;
 
-      return (await batchIsSettled(scope, statement.uploadBatchId))
+      return (await reconciliationDue(scope, statement.uploadBatchId))
         ? statement.uploadBatchId
         : null;
     });
@@ -95,7 +98,7 @@ export const parseStatementFunction = inngest.createFunction(
     // Sent through `step` for the reason `identify-statement.ts` gives: a crash between
     // finishing the parse and starting the run would otherwise leave a workspace full of
     // transactions that nothing ever judges.
-    if (settled) {
+    if (due) {
       await step.sendEvent("identify-requirements", [
         reconciliationRequested.create({
           workspaceId: event.data.workspaceId,
@@ -111,7 +114,12 @@ export const parseStatementFunction = inngest.createFunction(
  *
  * `onFailure` runs outside the step machinery, so this sends directly. The event is the
  * same one the success path raises; what happens next is a question about the batch, and
- * the batch does not care why a file stopped.
+ * the batch does not care why a file stopped -- only whether any of them got anywhere.
+ *
+ * So a batch that ends with one file parsed and one failed still raises the event, and a
+ * batch where every file failed does not. The second used to, and started a reconciliation
+ * run over an upload that had produced nothing: a run the user did not ask for, reporting on
+ * data that does not exist.
  */
 async function announceParsed(
   scope: Awaited<ReturnType<typeof openWorkspaceForJob>>,
@@ -122,7 +130,7 @@ async function announceParsed(
   const statement = await scope.selectOne(bankStatements, eq(bankStatements.id, statementId));
   if (!statement) return;
 
-  if (!(await batchIsSettled(scope, statement.uploadBatchId))) return;
+  if (!(await reconciliationDue(scope, statement.uploadBatchId))) return;
 
   await inngest.send(reconciliationRequested.create({ workspaceId, userId }));
 }

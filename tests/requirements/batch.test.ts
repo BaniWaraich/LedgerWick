@@ -12,7 +12,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import * as schema from "../../src/db/schema";
 import { openWorkspace, type WorkspaceScope } from "../../src/db/workspace-scope";
-import { batchIsSettled } from "../../src/requirements/batch";
+import { batchIsSettled, reconciliationDue } from "../../src/requirements/batch";
 import { createTestDb, seedBankAccount, seedWorkspace, type TestDb } from "../helpers/db";
 
 type State = (typeof schema.statementStateEnum.enumValues)[number];
@@ -132,5 +132,67 @@ describe("a batch that is not there", () => {
     const batch = await ours.batch("COMPLETED");
 
     expect(await batchIsSettled(ours.scope, batch)).toBe(true);
+  });
+});
+
+/*
+ * Every `batchIsSettled` test above is untouched, including "is settled when every file
+ * failed". That it needed no edit is the point: "has this stopped moving" and "did it leave
+ * anything to judge" are two questions, and only the second one is new.
+ */
+describe("whether a reconciliation run is due", () => {
+  it("is not due when every file in the batch failed", async () => {
+    const f = await fixture();
+    // The bug this fixes: an upload where nothing could be read still started a run, which
+    // reported on an upload that produced no data.
+    expect(await reconciliationDue(f.scope, await f.batch("FAILED", "FAILED"))).toBe(false);
+  });
+
+  it("is due when one file failed and another completed", async () => {
+    const f = await fixture();
+    // The behaviour the fix must not break: one unreadable file cannot stop the rest of an
+    // upload being reconciled (`upload-statement.md §11`).
+    expect(await reconciliationDue(f.scope, await f.batch("FAILED", "COMPLETED"))).toBe(true);
+  });
+
+  it("is due when every file completed", async () => {
+    const f = await fixture();
+    expect(await reconciliationDue(f.scope, await f.batch("COMPLETED", "COMPLETED"))).toBe(true);
+  });
+
+  it("is not due while one file is still being parsed", async () => {
+    const f = await fixture();
+    expect(await reconciliationDue(f.scope, await f.batch("COMPLETED", "PARSING"))).toBe(false);
+  });
+
+  it("is due although one file is waiting for the user to pick an account", async () => {
+    const f = await fixture();
+    expect(await reconciliationDue(f.scope, await f.batch("COMPLETED", "NEEDS_ACCOUNT"))).toBe(
+      true,
+    );
+  });
+
+  it("is not due when the only file that could be read is waiting for an account", async () => {
+    const f = await fixture();
+    /*
+     * The one case whose behaviour genuinely changed, and it self-heals: nothing has been
+     * produced yet, so there is nothing to judge. Binding the account sends `statement/bound`
+     * (`src/app/(workspace)/statements/actions.ts`), parsing runs, and the check is made
+     * again over a batch that now has a COMPLETED file in it.
+     */
+    expect(await reconciliationDue(f.scope, await f.batch("FAILED", "NEEDS_ACCOUNT"))).toBe(false);
+  });
+
+  it("is not due for a batch that does not exist", async () => {
+    const f = await fixture();
+    expect(await reconciliationDue(f.scope, crypto.randomUUID())).toBe(false);
+  });
+
+  it("is not due for a batch belonging to another workspace", async () => {
+    const theirs = await fixture();
+    const batch = await theirs.batch("COMPLETED");
+
+    const ours = await fixture();
+    expect(await reconciliationDue(ours.scope, batch)).toBe(false);
   });
 });

@@ -53,3 +53,54 @@ export async function batchIsSettled(
 
   return !statements.some((statement) => IN_FLIGHT.has(statement.state));
 }
+
+/**
+ * Did this batch leave anything behind for a run to judge?
+ *
+ * A separate question from `batchIsSettled`, and deliberately a separate function. That one
+ * asks whether everything has stopped moving, and its answer has to keep treating `FAILED`
+ * as stopped — a batch of five files where one was unreadable must still reconcile the four
+ * that were not. Folding "and it produced something" into it would make a settled batch and
+ * a productive one the same idea, which they are not: a batch holding one `COMPLETED` file
+ * and one `NEEDS_ACCOUNT` file has stopped for now and does have work to do.
+ *
+ * `COMPLETED` is the test rather than `line_count > 0`, and the difference matters. Parsing
+ * fails a statement that yielded no transactions before it can reach `COMPLETED`
+ * (`NO_TRANSACTIONS` in `src/statements/parse.ts`), so `COMPLETED` already implies at least
+ * one line. `line_count` is nullable, and a null on a row written before it existed would
+ * read as "produced nothing" and silently suppress a legitimate run — the kind of wrong
+ * answer nobody goes looking for.
+ */
+export async function batchProducedTransactions(
+  scope: WorkspaceScope,
+  uploadBatchId: string,
+): Promise<boolean> {
+  const statements = await scope.select(
+    bankStatements,
+    eq(bankStatements.uploadBatchId, uploadBatchId),
+  );
+
+  return statements.some((statement) => statement.state === "COMPLETED");
+}
+
+/**
+ * The whole condition for starting a reconciliation run: the batch has stopped, and it left
+ * something to judge.
+ *
+ * Both halves are needed and neither implies the other. Without the first, a run judges half
+ * an upload. Without the second, a batch whose every file failed still starts a run, which
+ * reads the workspace, finds nothing new, and writes a `COMPLETED` run with nothing in it —
+ * a reconciliation the user did not ask for, reporting on an upload that produced no data.
+ *
+ * `identify.ts` would survive that run: what counts as new there is the absence of a
+ * requirement, so an empty delta is a cheap no-op. Surviving it is not a reason to start it.
+ */
+export async function reconciliationDue(
+  scope: WorkspaceScope,
+  uploadBatchId: string,
+): Promise<boolean> {
+  return (
+    (await batchIsSettled(scope, uploadBatchId)) &&
+    (await batchProducedTransactions(scope, uploadBatchId))
+  );
+}
