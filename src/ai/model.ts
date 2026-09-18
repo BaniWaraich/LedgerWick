@@ -17,6 +17,8 @@ import "server-only";
 import { generateObject, NoObjectGeneratedError } from "ai";
 import type { ZodType } from "zod";
 
+import { timed } from "../observability/timing";
+
 /**
  * A versioned prompt.
  *
@@ -72,12 +74,24 @@ export async function inferStructure<T>(request: {
   content: InferenceContent[];
 }): Promise<Inference<T>> {
   try {
-    const { object } = await generateObject({
-      model: modelId(),
-      schema: request.schema,
-      system: request.prompt.system,
-      messages: [{ role: "user", content: request.content }],
-    });
+    /*
+     * Timed because this is the only unbounded wait in the system, and the one most likely
+     * to be why a parse never finished. No `abortSignal` and no explicit `maxRetries` are
+     * set here, so the AI SDK's own default applies — up to three attempts with backoff,
+     * invisible to the workflow above and billed entirely against its 300-second budget.
+     * Whether that default is the problem is exactly what these numbers decide.
+     */
+    const { object } = await timed(
+      "model",
+      { prompt: request.prompt.id, version: request.prompt.version, model: modelId() },
+      () =>
+        generateObject({
+          model: modelId(),
+          schema: request.schema,
+          system: request.prompt.system,
+          messages: [{ role: "user", content: request.content }],
+        }),
+    );
 
     return { ok: true, value: object };
   } catch (error) {

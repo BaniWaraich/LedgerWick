@@ -35,6 +35,7 @@ import { and, isNotNull, ne } from "drizzle-orm";
 
 import { bankAccounts, bankStatements, statementLines } from "../db/schema";
 import type { WorkspaceScope } from "../db/workspace-scope";
+import { timed } from "../observability/timing";
 import { currencyFor, type Currency } from "../money/currencies";
 import { columnMappingSchema, type ColumnMapping } from "../ai/prompts/map-statement-columns.v1";
 import type { DocumentStore } from "../storage/document-store";
@@ -135,8 +136,14 @@ export async function parseStatement(
     return;
   }
 
-  const bytes = new Uint8Array(await new Response(object.stream).arrayBuffer());
-  const source = await readStatementSource(bytes, deps.extractPdfText);
+  const bytes = await timed(
+    "fetch-bytes",
+    { statementId },
+    async () => new Uint8Array(await new Response(object.stream).arrayBuffer()),
+  );
+  const source = await timed("read-source", { statementId, bytes: bytes.length }, () =>
+    readStatementSource(bytes, deps.extractPdfText),
+  );
 
   /*
    * The period the document declared, for rows that print a day and a month and leave the
@@ -148,16 +155,24 @@ export async function parseStatement(
       ? { start: statement.periodStart, end: statement.periodEnd }
       : undefined;
 
-  const attempt =
-    source.path === "TEXT"
-      ? await readAsText(
-          deps,
-          source.grid,
-          currency,
-          await pinnedMapping(scope, statement),
-          declared,
-        )
-      : await readAsScan(deps, source.bytes, currency, declared);
+  /*
+   * The whole model-driven read, timed as one stage and labelled with the path it took.
+   *
+   * The two paths cost very different things — TEXT can call the model twice (the initial
+   * mapping, then ADR 0003's re-derive), SCAN calls it once but ships the entire document —
+   * so "how long did parsing take" is not answerable without knowing which ran. A pinned
+   * mapping makes TEXT call the model not at all, which is the third case these numbers have
+   * to be able to tell apart.
+   */
+  const pinned = source.path === "TEXT" ? await pinnedMapping(scope, statement) : null;
+  const attempt = await timed(
+    "read-structure",
+    { statementId, path: source.path, pinned: pinned !== null },
+    () =>
+      source.path === "TEXT"
+        ? readAsText(deps, source.grid, currency, pinned, declared)
+        : readAsScan(deps, source.bytes, currency, declared),
+  );
 
   if (!attempt) {
     await fail(scope, statementId, STRUCTURE_UNREADABLE);
@@ -173,12 +188,16 @@ export async function parseStatement(
 
   await scope.update(bankStatements, { state: "VALIDATING" }, eq(bankStatements.id, statementId));
 
-  await writeLines(scope, statementId, attempt.walk);
+  await timed("write-lines", { statementId, lines: attempt.walk.lines.length }, () =>
+    writeLines(scope, statementId, attempt.walk),
+  );
 
-  await promoteStatement(scope, statementId, {
-    bankAccountId: account.id,
-    currency: account.currency,
-  });
+  await timed("promote", { statementId, lines: attempt.walk.lines.length }, () =>
+    promoteStatement(scope, statementId, {
+      bankAccountId: account.id,
+      currency: account.currency,
+    }),
+  );
 
   const coverage = coveragePeriod(statement, attempt.walk);
 
