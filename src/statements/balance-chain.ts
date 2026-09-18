@@ -61,16 +61,36 @@ export type BreakKind =
   | "MISSING_ROW"
   | "UNEXPLAINED";
 
-export interface ChainBreak {
-  /** The grid row, so a finding is traceable to the document. */
+/** The row a break points at, which is rarely the row the break was noticed on. */
+export interface Implicated {
   readonly rowIndex: number;
-  /** Where it sits in the extracted lines, so a caller can act on it without searching. */
+  readonly lineIndex: number;
+}
+
+export interface ChainBreak {
+  /** The grid row the break was OBSERVED on: the link's closing balance. */
+  readonly rowIndex: number;
+  /** Where that row sits in the extracted lines. */
   readonly lineIndex: number;
   readonly expectedMinor: bigint;
   readonly printedMinor: bigint;
   /** `printed − expected`. For an extraneous row this is the amount it wrongly applied. */
   readonly deltaMinor: bigint;
   readonly kind: BreakKind;
+  /**
+   * The row whose removal or correction explains the break, where one does.
+   *
+   * Distinct from `rowIndex` on purpose, and the distinction is the whole lesson of statement
+   * #5. A link runs from one printed balance to the next, and a statement prints no balance
+   * beside a line of metadata — so a spurious row is never the row a break is noticed on. It
+   * sits somewhere inside the link, and the row carrying the balance that failed is the real
+   * transaction immediately after it.
+   *
+   * The first version of this module only ever tested the last row of a link, which is
+   * exactly the row that is innocent. Nine breaks came back on a statement with thirteen
+   * known-spurious rows and not one was classified as extraneous.
+   */
+  readonly implicates: Implicated | null;
 }
 
 /**
@@ -135,13 +155,15 @@ export function auditBalanceChain(
     const expected = since.reduce((running, row) => running + signed(row), previous);
 
     if (expected !== line.balanceMinor) {
+      const explanation = classify(previous, since, line.balanceMinor, lineIndex);
       breaks.push({
         rowIndex: line.rowIndex,
         lineIndex,
         expectedMinor: expected,
         printedMinor: line.balanceMinor,
         deltaMinor: line.balanceMinor - expected,
-        kind: classify(previous, since, line.balanceMinor),
+        kind: explanation.kind,
+        implicates: explanation.implicates,
       });
     }
 
@@ -158,18 +180,51 @@ export function auditBalanceChain(
  * Each test either reconciles exactly or it does not; there is no closest fit and no
  * tolerance. A near miss is `UNEXPLAINED`, which is honest — the alternative is a classifier
  * that names a cause it cannot demonstrate, and a caller downstream acting on the name.
+ *
+ * Every row of the link is tried, not only the last. A link spans from one printed balance to
+ * the next, and the rows in between printed none — which on a real statement is precisely
+ * where a spurious row lives, because a bank prints a running balance beside a transaction and
+ * not beside the exchange rate underneath it. Testing only the final row tests the one row in
+ * the link that is guaranteed to be a real transaction.
+ *
+ * Ambiguity is refused rather than resolved. Where two different rows would each reconcile the
+ * link if removed, the arithmetic genuinely cannot say which, and naming one would be a guess
+ * wearing the clothes of a deduction.
  */
-function classify(previous: bigint, since: readonly ParsedLine[], printed: bigint): BreakKind {
+function classify(
+  previous: bigint,
+  since: readonly ParsedLine[],
+  printed: bigint,
+  /** Where the link's closing row sits in `lines`, so an implicated row can be located too. */
+  endLineIndex: number,
+): { kind: BreakKind; implicates: Implicated | null } {
   const total = since.reduce((running, row) => running + signed(row), 0n);
-  const last = since[since.length - 1];
 
-  // The row's amount applied the other way round reaches the printed balance. A debit column
-  // read as a credit is the ordinary cause, and it is a mapping error rather than a row error.
-  if (previous + total - signed(last) * 2n === printed) return "DIRECTION";
+  // The link ends at `endLineIndex`, so a row `n` places back inside it sits `n` places back
+  // in the statement's lines. Counted rather than searched: two rows of one statement can be
+  // identical in every field, and `indexOf` would answer for the wrong one.
+  const at = (row: ParsedLine, index: number): Implicated => ({
+    rowIndex: row.rowIndex,
+    lineIndex: endLineIndex - (since.length - 1 - index),
+  });
 
-  // Leaving the row out reaches it. The statement is saying this row moved no money, which is
-  // what a line of metadata inside a transaction looks like from here.
-  if (previous + total - signed(last) === printed) return "EXTRANEOUS_ROW";
+  // The amount applied the other way round reaches the printed balance. A debit column read as
+  // a credit is the ordinary cause, and it is a mapping error rather than a row error.
+  const flipped = indexesWhere(since, (row) => previous + total - signed(row) * 2n === printed);
+  if (flipped.length === 1) {
+    return { kind: "DIRECTION", implicates: at(since[flipped[0]], flipped[0]) };
+  }
+
+  // Leaving it out reaches the balance. The statement is saying this row moved no money, which
+  // is what a line of metadata inside a transaction looks like from here.
+  const removable = indexesWhere(since, (row) => previous + total - signed(row) === printed);
+  if (removable.length === 1) {
+    return { kind: "EXTRANEOUS_ROW", implicates: at(since[removable[0]], removable[0]) };
+  }
+
+  // More than one row would explain it on its own. Reported as a break with no row named,
+  // because the link is genuinely ambiguous and a caller must not act on a coin toss.
+  if (removable.length > 1) return { kind: "EXTRANEOUS_ROW", implicates: null };
 
   /*
    * The balance moved further than these rows account for, in the same direction they moved.
@@ -179,12 +234,23 @@ function classify(previous: bigint, since: readonly ParsedLine[], printed: bigin
    * from the rows that survived.
    */
   const shortfall = printed - (previous + total);
-  if (total !== 0n && shortfall > 0n === total > 0n) return "MISSING_ROW";
+  if (total !== 0n && shortfall > 0n === total > 0n) {
+    return { kind: "MISSING_ROW", implicates: null };
+  }
 
-  // The balance moved, but not by what this row claims. The row is real and its figure is not.
-  if (printed !== previous) return "AMOUNT";
+  // The balance moved, but not by what these rows claim. Named only where the link holds a
+  // single row: with several there is nothing to say which of them carries the wrong figure.
+  if (printed !== previous) {
+    return { kind: "AMOUNT", implicates: since.length === 1 ? at(since[0], 0) : null };
+  }
 
-  return "UNEXPLAINED";
+  return { kind: "UNEXPLAINED", implicates: null };
+}
+
+function indexesWhere(rows: readonly ParsedLine[], holds: (row: ParsedLine) => boolean): number[] {
+  const found: number[] = [];
+  for (const [index, row] of rows.entries()) if (holds(row)) found.push(index);
+  return found;
 }
 
 function coverageOf(lines: readonly ParsedLine[], checked: number, broken: number): ChainCoverage {

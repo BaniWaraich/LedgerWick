@@ -265,5 +265,6 @@ function break_(rowIndex: number, kind: "EXTRANEOUS_ROW" | "MISSING_ROW" | "AMOU
     printedMinor: 9000n,
     deltaMinor: 2500n,
     kind,
+    implicates: null,
   } as const;
 }

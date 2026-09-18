@@ -199,3 +199,72 @@ describe("the arithmetic itself", () => {
     expect(audit).toMatchObject({ coverage: "NONE", checked: 0, breaks: [] });
   });
 });
+
+/*
+ * The case the first version of this module could not see, and the reason statement #5 came
+ * back with nine breaks and not one of them classified as extraneous.
+ *
+ * A bank prints a running balance beside a transaction. It prints none beside the exchange
+ * rate underneath it. So a spurious row carries no balance, is never the end of a link, and is
+ * never the row a break is noticed on — it sits inside the link, and the innocent transaction
+ * after it takes the blame. Testing only the last row of a link tests the one row guaranteed
+ * to be real.
+ */
+describe("a spurious row in the middle of a link", () => {
+  it("is found even though the break shows up on the row after it", () => {
+    const metadata = debit(2500n, null);
+    const real = debit(1000n, 9000n);
+    const audit = auditBalanceChain([metadata, real], 10000n);
+
+    expect(audit.breaks).toHaveLength(1);
+    expect(audit.breaks[0].kind).toBe("EXTRANEOUS_ROW");
+    // Noticed on the real transaction, blamed on the metadata line above it.
+    expect(audit.breaks[0].rowIndex).toBe(real.rowIndex);
+    expect(audit.breaks[0].implicates?.rowIndex).toBe(metadata.rowIndex);
+  });
+
+  it("locates the implicated row among the statement's lines, not within the link", () => {
+    const rows = [debit(1000n, 9000n), debit(500n, 8500n), debit(2500n, null), debit(300n, 8200n)];
+    const audit = auditBalanceChain(rows, 10000n);
+
+    expect(audit.breaks[0].implicates).toEqual({ rowIndex: rows[2].rowIndex, lineIndex: 2 });
+  });
+
+  it("names no row when two of them would each explain the link alone", () => {
+    // Two rows of the same amount inside one link: removing either reconciles it, and the
+    // arithmetic genuinely cannot say which. Naming one would be a guess dressed as a finding.
+    const audit = auditBalanceChain(
+      [debit(2500n, null), debit(2500n, null), debit(1000n, 6500n)],
+      10000n,
+    );
+
+    expect(audit.breaks[0].kind).toBe("EXTRANEOUS_ROW");
+    expect(audit.breaks[0].implicates).toBeNull();
+  });
+
+  it("still names the row on a one-row link", () => {
+    const only = debit(1000n, 9500n);
+    const audit = auditBalanceChain([only], 10000n);
+
+    expect(audit.breaks[0]).toMatchObject({
+      kind: "AMOUNT",
+      implicates: { rowIndex: only.rowIndex, lineIndex: 0 },
+    });
+  });
+
+  it("says nothing about which row when a multi-row link is merely out by some amount", () => {
+    const audit = auditBalanceChain([debit(1000n, null), debit(500n, 7000n)], 10000n);
+
+    expect(audit.breaks[0].implicates).toBeNull();
+  });
+
+  it("finds a direction read backwards inside a link too", () => {
+    const wrong = debit(750n, null);
+    const audit = auditBalanceChain([wrong, debit(1000n, 9750n)], 10000n);
+
+    expect(audit.breaks[0]).toMatchObject({
+      kind: "DIRECTION",
+      implicates: { rowIndex: wrong.rowIndex },
+    });
+  });
+});

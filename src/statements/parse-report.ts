@@ -112,6 +112,8 @@ export interface ParseReport {
       readonly expectedMinor: string;
       readonly printedMinor: string;
       readonly deltaMinor: string;
+      /** The row the break points at, which is rarely the row it was noticed on. */
+      readonly implicatesRow: number | null;
     }[];
     readonly truncated: boolean;
   };
@@ -176,6 +178,7 @@ export function parseReport(input: {
         expectedMinor: item.expectedMinor.toString(),
         printedMinor: item.printedMinor.toString(),
         deltaMinor: item.deltaMinor.toString(),
+        implicatesRow: item.implicates?.rowIndex ?? null,
       })),
       truncated: audit.breaks.length > MAX_CHAIN_BREAKS,
     },
@@ -229,7 +232,21 @@ export function logParseReport(statementId: string, report: ParseReport): void {
     const kinds = Object.entries(report.chain.byKind)
       .map(([kind, count]) => `${count}x ${kind}`)
       .join(", ");
-    const rows = report.chain.breaks.map((item) => `${item.rowIndex}:${item.kind}`).join(",");
+    /*
+     * The implicated row where there is one, and the delta always.
+     *
+     * The delta is what makes the list addable: thirteen extraneous rows should sum to the
+     * difference the statement is out by, and a list that does not sum to it is describing
+     * something else.
+     */
+    const rows = report.chain.breaks
+      .map(
+        (item) =>
+          `${item.rowIndex}:${item.kind}` +
+          `${item.implicatesRow === null ? "" : `->${item.implicatesRow}`}` +
+          `(${item.deltaMinor})`,
+      )
+      .join(",");
     console.log(
       `[parse] statement=${statementId} brokeBy="${kinds}" at=${rows}` +
         `${report.chain.truncated ? ",…" : ""}`,
