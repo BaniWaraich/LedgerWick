@@ -60,6 +60,7 @@
 
 import { and, eq, inArray } from "drizzle-orm";
 
+import { mapWithConcurrency } from "../concurrency";
 import { canonicalTransactions, statementLines } from "../db/schema";
 import type { WorkspaceScope } from "../db/workspace-scope";
 import { normalizeDescription } from "./description";
@@ -164,31 +165,6 @@ export async function promoteStatement(
   }
 
   return { created, linked };
-}
-
-/**
- * Run `work` over `items`, at most `limit` at a time, preserving input order in the results.
- *
- * A worker pool rather than fixed chunks: a chunked version waits for the slowest member of
- * each batch before starting the next, which on work this uneven — most groups hold one
- * line, a few hold several — spends most of its time idle.
- */
-async function mapWithConcurrency<T, R>(
-  items: readonly T[],
-  limit: number,
-  work: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results = new Array<R>(items.length);
-  let next = 0;
-
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    for (let index = next++; index < items.length; index = next++) {
-      results[index] = await work(items[index]);
-    }
-  });
-
-  await Promise.all(workers);
-  return results;
 }
 
 /**

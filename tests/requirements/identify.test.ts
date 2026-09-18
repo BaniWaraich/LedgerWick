@@ -563,3 +563,107 @@ describe("workspace isolation", () => {
     expect(stolen).toEqual([]);
   });
 });
+
+/*
+ * The production failure this covers: one batch of 404 transactions came back in a shape
+ * the schema rejected, the run returned on it, and a workspace showed five requirements
+ * from its earliest days as though that were the whole answer.
+ */
+describe("one batch the model cannot answer", () => {
+  /** Fails the nth call and requires a document on every other. */
+  function failsBatch(nth: number): ClassifyTransactions & { calls: number } {
+    const fake = Object.assign(
+      async (request: { transactions: TransactionBrief[] }) => {
+        fake.calls += 1;
+        if (fake.calls === nth) {
+          return { ok: false as const, reason: "response did not match schema" };
+        }
+        return {
+          ok: true as const,
+          value: {
+            judgements: request.transactions.map((transaction) => ({
+              index: transaction.index,
+              vendorGuess: "Anthropic",
+              businessContext: "Software subscription",
+              needsDocument: true,
+              reason: "Monthly software subscription.",
+              confident: true,
+              clarification: null,
+            })),
+          },
+        };
+      },
+      { calls: 0 },
+    );
+    return fake;
+  }
+
+  /** Three batches' worth, so one can fail while others succeed. */
+  async function ninetyPayments(fx: Fixture) {
+    for (let index = 0; index < 90; index += 1) {
+      await fx.payment({ description: `VENDOR ${index}`, amount: BigInt(100000 + index) });
+    }
+  }
+
+  it("does not abandon the batches that follow it", async () => {
+    const fx = await fixture();
+    await ninetyPayments(fx);
+
+    const outcome = await identifyRequirements(fx.scope, { classify: failsBatch(1) });
+
+    // 90 payments over batches of 40: the first 40 are lost, the other 50 are judged.
+    expect(outcome.transactionsProcessed).toBe(50);
+    expect(await requirementsOf(fx)).toHaveLength(50);
+  });
+
+  it("completes the run rather than reporting a truncated list as finished", async () => {
+    const fx = await fixture();
+    await ninetyPayments(fx);
+
+    const outcome = await identifyRequirements(fx.scope, { classify: failsBatch(2) });
+
+    expect(outcome.state).toBe("COMPLETED");
+    expect(outcome.batchesFailed).toBe(1);
+  });
+
+  it("reports what it judged, not what was waiting", async () => {
+    const fx = await fixture();
+    await ninetyPayments(fx);
+
+    await identifyRequirements(fx.scope, { classify: failsBatch(3) });
+
+    const [run] = await fx.scope.select(reconciliationRuns);
+    // The 10 in the third batch went unjudged, and the row says 80 rather than 90.
+    expect(run.transactionsProcessed).toBe(80);
+    expect(run.state).toBe("COMPLETED");
+  });
+
+  it("leaves the skipped transactions for the next run to pick up", async () => {
+    const fx = await fixture();
+    await ninetyPayments(fx);
+
+    await identifyRequirements(fx.scope, { classify: failsBatch(1) });
+    expect(await requirementsOf(fx)).toHaveLength(50);
+
+    // Nothing records that they were skipped; they are simply still unjudged.
+    const second = await identifyRequirements(fx.scope, { classify: alwaysRequires() });
+    expect(second.transactionsProcessed).toBe(40);
+    expect(await requirementsOf(fx)).toHaveLength(90);
+  });
+
+  it("still fails the run when every batch fails", async () => {
+    const fx = await fixture();
+    await ninetyPayments(fx);
+
+    const allFail: ClassifyTransactions = async () => ({
+      ok: false,
+      reason: "response did not match schema",
+    });
+
+    const outcome = await identifyRequirements(fx.scope, { classify: allFail });
+
+    expect(outcome.state).toBe("FAILED");
+    const [run] = await fx.scope.select(reconciliationRuns);
+    expect(run.state).toBe("FAILED");
+  });
+});
