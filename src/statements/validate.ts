@@ -24,13 +24,14 @@ import { readAmount } from "../money/amounts";
 import type { Currency } from "../money/currencies";
 import type { ColumnMapping } from "../ai/prompts/map-statement-columns.v1";
 import type { ScannedStatement } from "../ai/prompts/read-scanned-statement.v1";
+import { chainIsReliable, type BalanceChainAudit } from "./balance-chain";
 import type { Grid } from "./csv";
 import type { ParsedLine } from "./walk";
 
 /** Where a balance came from. Recorded, because a discrepancy reads differently for each. */
-export type BalanceSource = "LOCATOR" | "BALANCE_COLUMN" | "STATED";
+type BalanceSource = "LOCATOR" | "BALANCE_COLUMN" | "STATED";
 
-export interface Balance {
+interface Balance {
   readonly minor: bigint | null;
   readonly source: BalanceSource | null;
 }
@@ -206,7 +207,18 @@ function fromBalanceColumn(lines: readonly ParsedLine[]): Balances {
  * discrepancy means the system does not trust the result rather than that processing
  * failed. `0009` reaches the same conclusion from the other direction.
  */
-export function validate(lines: readonly ParsedLine[], balances: Balances): Validation {
+export function validate(
+  lines: readonly ParsedLine[],
+  balances: Balances,
+  /*
+   * The per-row check, where the statement printed enough balances to run one.
+   *
+   * Optional because a caller that has not computed it should not be forced to fake one, and
+   * because an absent audit and an audit that found nothing are the same thing to the outcome.
+   * They are not the same thing to the report, which says which it was.
+   */
+  audit?: BalanceChainAudit,
+): Validation {
   const totals = totalsOf(lines);
 
   const differenceMinor = difference({
@@ -216,8 +228,23 @@ export function validate(lines: readonly ParsedLine[], balances: Balances): Vali
     totalDebits: totals.debits,
   });
 
+  /*
+   * A reconciling total is no longer enough on its own.
+   *
+   * The equation is the chain's telescoped sum, so it is blind to anything that cancels along
+   * the way -- two errors in opposite directions, or a row the statement's own running balance
+   * says moved no money while another absorbs the difference. `§7` asks whether the statement
+   * adds up, and a document that contradicts itself row by row does not, however the ends
+   * meet.
+   *
+   * Only a chain worth believing may demote an outcome. One that broke at nearly every link is
+   * describing a mapping that put the balance somewhere else, and failing every such statement
+   * on that basis would be reporting our own confusion as the document's.
+   */
+  const chainDisagrees = audit !== undefined && chainIsReliable(audit) && audit.breaks.length > 0;
+
   return {
-    outcome: differenceMinor === 0n ? "VALID" : "DISCREPANCY",
+    outcome: differenceMinor === 0n && !chainDisagrees ? "VALID" : "DISCREPANCY",
     differenceMinor,
     totals,
   };

@@ -41,6 +41,7 @@
  */
 
 import type { ColumnMapping } from "../ai/prompts/map-statement-columns.v1";
+import type { BalanceChainAudit, BreakKind, ChainCoverage } from "./balance-chain";
 import type { Balances, Validation } from "./validate";
 import type { SkippedRow, Walk } from "./walk";
 
@@ -53,6 +54,15 @@ import type { SkippedRow, Walk } from "./walk";
  * for going and looking at the document, and the first two hundred are enough to do that.
  */
 const MAX_SKIPPED_ROWS = 200;
+
+/**
+ * How many individual chain breaks are kept.
+ *
+ * Smaller than the skipped-row cap, because a break is read one at a time against the
+ * document rather than scanned in bulk, and because a statement with more than fifty of them
+ * has a mapping problem that the count already states more usefully than the list would.
+ */
+const MAX_CHAIN_BREAKS = 50;
 
 /** Where a balance came from, as `validate.ts` reports it. */
 type BalanceSource = Balances["opening"]["source"];
@@ -89,6 +99,22 @@ export interface ParseReport {
   readonly outcome: Validation["outcome"];
   /** Filled on the text path only. Null means the check did not run, not that it found none. */
   readonly excluded: ExcludedRows | null;
+  /** Each row against the balance printed beside it. `NONE` coverage is not a pass. */
+  readonly chain: {
+    readonly coverage: ChainCoverage;
+    readonly checked: number;
+    readonly breakCount: number;
+    readonly byKind: Partial<Record<BreakKind, number>>;
+    readonly breaks: {
+      readonly rowIndex: number;
+      readonly lineIndex: number;
+      readonly kind: BreakKind;
+      readonly expectedMinor: string;
+      readonly printedMinor: string;
+      readonly deltaMinor: string;
+    }[];
+    readonly truncated: boolean;
+  };
 }
 
 /**
@@ -106,8 +132,12 @@ export function parseReport(input: {
   balances: Balances;
   validation: Validation;
   excluded: ExcludedRows | null;
+  audit: BalanceChainAudit;
 }): ParseReport {
-  const { grid, mapping, walk, balances, validation, excluded } = input;
+  const { grid, mapping, walk, balances, validation, excluded, audit } = input;
+
+  const byKind: Partial<Record<BreakKind, number>> = {};
+  for (const item of audit.breaks) byKind[item.kind] = (byKind[item.kind] ?? 0) + 1;
 
   const byReason: Record<string, number> = {};
   for (const row of walk.skipped) byReason[row.reason] = (byReason[row.reason] ?? 0) + 1;
@@ -134,6 +164,21 @@ export function parseReport(input: {
     differenceMinor: validation.differenceMinor?.toString() ?? null,
     outcome: validation.outcome,
     excluded,
+    chain: {
+      coverage: audit.coverage,
+      checked: audit.checked,
+      breakCount: audit.breaks.length,
+      byKind,
+      breaks: audit.breaks.slice(0, MAX_CHAIN_BREAKS).map((item) => ({
+        rowIndex: item.rowIndex,
+        lineIndex: item.lineIndex,
+        kind: item.kind,
+        expectedMinor: item.expectedMinor.toString(),
+        printedMinor: item.printedMinor.toString(),
+        deltaMinor: item.deltaMinor.toString(),
+      })),
+      truncated: audit.breaks.length > MAX_CHAIN_BREAKS,
+    },
   };
 }
 
@@ -161,6 +206,9 @@ export function logParseReport(statementId: string, report: ParseReport): void {
     `diff=${report.differenceMinor}`,
     `outcome=${report.outcome}`,
     `excludedLike=${report.excluded?.count ?? "n/a"}`,
+    `chain=${report.chain.coverage}`,
+    `links=${report.chain.checked}`,
+    `breaks=${report.chain.breakCount}`,
   ];
 
   console.log(`[parse] ${fields.join(" ")}`);
@@ -174,6 +222,17 @@ export function logParseReport(statementId: string, report: ParseReport): void {
       `[parse] statement=${statementId} skippedBy="${reasons}" rows=${rows}${
         report.skipped.truncated ? ",…" : ""
       }`,
+    );
+  }
+
+  if (report.chain.breakCount > 0) {
+    const kinds = Object.entries(report.chain.byKind)
+      .map(([kind, count]) => `${count}x ${kind}`)
+      .join(", ");
+    const rows = report.chain.breaks.map((item) => `${item.rowIndex}:${item.kind}`).join(",");
+    console.log(
+      `[parse] statement=${statementId} brokeBy="${kinds}" at=${rows}` +
+        `${report.chain.truncated ? ",…" : ""}`,
     );
   }
 

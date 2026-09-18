@@ -11,6 +11,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ColumnMapping } from "../../src/ai/prompts/map-statement-columns.v1";
+import type { BalanceChainAudit } from "../../src/statements/balance-chain";
 import { parseReport } from "../../src/statements/parse-report";
 import type { Balances, Validation } from "../../src/statements/validate";
 import type { ParsedLine, Walk } from "../../src/statements/walk";
@@ -56,6 +57,9 @@ const VALID: Validation = {
   totals: { credits: 0n, debits: 800000n },
 };
 
+/** A statement whose every row agreed with the balance printed beside it. */
+const CLEAN_CHAIN: BalanceChainAudit = { coverage: "FULL", checked: 2, breaks: [] };
+
 function report(
   overrides: {
     grid?: { length: number } | null;
@@ -63,6 +67,7 @@ function report(
     walk?: Partial<Walk>;
     balances?: Balances;
     validation?: Validation;
+    audit?: BalanceChainAudit;
   } = {},
 ) {
   return parseReport({
@@ -72,6 +77,7 @@ function report(
     balances: overrides.balances ?? BALANCES,
     validation: overrides.validation ?? VALID,
     excluded: null,
+    audit: overrides.audit ?? CLEAN_CHAIN,
   });
 }
 
@@ -198,3 +204,66 @@ describe("the figures", () => {
     expect(r.differenceMinor).toBeNull();
   });
 });
+
+describe("the balance chain", () => {
+  it("reports coverage, so an unchecked statement is not mistaken for a clean one", () => {
+    const r = report({ audit: { coverage: "NONE", checked: 0, breaks: [] } });
+
+    expect(r.chain.coverage).toBe("NONE");
+    expect(r.chain.breakCount).toBe(0);
+  });
+
+  it("counts the breaks by what kind they are", () => {
+    const r = report({
+      audit: {
+        coverage: "FULL",
+        checked: 400,
+        breaks: [
+          break_(61, "EXTRANEOUS_ROW"),
+          break_(122, "EXTRANEOUS_ROW"),
+          break_(183, "MISSING_ROW"),
+        ],
+      },
+    });
+
+    expect(r.chain.breakCount).toBe(3);
+    expect(r.chain.byKind).toEqual({ EXTRANEOUS_ROW: 2, MISSING_ROW: 1 });
+  });
+
+  it("carries the row each break sits on, so the finding reaches the document", () => {
+    const r = report({
+      audit: { coverage: "FULL", checked: 400, breaks: [break_(61, "EXTRANEOUS_ROW")] },
+    });
+
+    expect(r.chain.breaks[0]).toMatchObject({ rowIndex: 61, kind: "EXTRANEOUS_ROW" });
+  });
+
+  it("writes its figures as strings, like every other bigint here", () => {
+    const r = report({
+      audit: { coverage: "FULL", checked: 1, breaks: [break_(61, "EXTRANEOUS_ROW")] },
+    });
+
+    expect(JSON.parse(JSON.stringify(r)).chain.breaks[0].deltaMinor).toBe("2500");
+  });
+
+  it("caps the break list and says that it did", () => {
+    const breaks = Array.from({ length: 80 }, (_, index) => break_(index, "AMOUNT"));
+    const r = report({ audit: { coverage: "FULL", checked: 400, breaks } });
+
+    expect(r.chain.breaks).toHaveLength(50);
+    expect(r.chain.truncated).toBe(true);
+    // The count stays exact whatever the cap did to the list.
+    expect(r.chain.breakCount).toBe(80);
+  });
+});
+
+function break_(rowIndex: number, kind: "EXTRANEOUS_ROW" | "MISSING_ROW" | "AMOUNT") {
+  return {
+    rowIndex,
+    lineIndex: rowIndex,
+    expectedMinor: 6500n,
+    printedMinor: 9000n,
+    deltaMinor: 2500n,
+    kind,
+  } as const;
+}

@@ -36,6 +36,7 @@ import { and, isNotNull, ne } from "drizzle-orm";
 import { bankAccounts, bankStatements, statementLines } from "../db/schema";
 import type { WorkspaceScope } from "../db/workspace-scope";
 import { timed } from "../observability/timing";
+import { auditBalanceChain, type BalanceChainAudit } from "./balance-chain";
 import { logParseReport, parseReport, type ExcludedRows } from "./parse-report";
 import { currencyFor, type Currency } from "../money/currencies";
 import { columnMappingSchema, type ColumnMapping } from "../ai/prompts/map-statement-columns.v1";
@@ -87,6 +88,7 @@ interface Attempt {
   readonly mapping: ColumnMapping | null;
   /** The grid this attempt read, for the report. Null on the scanned path, which has none. */
   readonly grid: Grid | null;
+  readonly audit: BalanceChainAudit;
 }
 
 /**
@@ -204,6 +206,7 @@ export async function parseStatement(
     balances: attempt.balances,
     validation: attempt.validation,
     excluded,
+    audit: attempt.audit,
   });
 
   // Never lets a reporting bug fail a parse. Nothing here is load-bearing for the statement.
@@ -291,7 +294,15 @@ async function readAsText(
   if (pinned) {
     const walk = walkStatement(grid, pinned, currency, period);
     const balances = balancesFromGrid(grid, pinned, walk.lines, currency);
-    return { walk, balances, validation: validate(walk.lines, balances), mapping: pinned, grid };
+    const audit = auditBalanceChain(walk.lines, statedOpening(balances));
+    return {
+      walk,
+      balances,
+      validation: validate(walk.lines, balances, audit),
+      mapping: pinned,
+      grid,
+      audit,
+    };
   }
 
   const first = await attemptText(deps, grid, currency, undefined, period);
@@ -302,10 +313,25 @@ async function readAsText(
   // wrong -- a swapped debit and credit column is exactly the error the balance equation is
   // best at catching -- and unlike the scanned path, re-reading the file costs nothing in
   // accuracy because code reads every value either way.
-  const second = await attemptText(deps, grid, currency, describe(first.validation), period);
+  const second = await attemptText(
+    deps,
+    grid,
+    currency,
+    describe(first.validation, first.audit),
+    period,
+  );
 
   if (!second) return first;
-  return second.validation.outcome === "VALID" ? second : first;
+  if (second.validation.outcome === "VALID") return second;
+
+  /*
+   * Neither reconciled, so the question is which is less wrong -- and until the chain existed
+   * there was no way to ask it. Two mappings that both miss the closing balance are the same
+   * answer to the aggregate; the one whose rows disagree with the statement's own running
+   * balance fewer times is the better reading of the document, and often by a wide margin,
+   * because a mis-mapped column breaks nearly every link rather than a handful.
+   */
+  return second.audit.breaks.length < first.audit.breaks.length ? second : first;
 }
 
 async function attemptText(
@@ -321,12 +347,15 @@ async function attemptText(
   const walk = walkStatement(grid, mapped.value, currency, period);
   const balances = balancesFromGrid(grid, mapped.value, walk.lines, currency);
 
+  const audit = auditBalanceChain(walk.lines, statedOpening(balances));
+
   return {
     walk,
     balances,
-    validation: validate(walk.lines, balances),
+    validation: validate(walk.lines, balances, audit),
     mapping: mapped.value,
     grid,
+    audit,
   };
 }
 
@@ -349,7 +378,22 @@ async function readAsScan(
   const walk = linesFromScanned(read.value, currency, period);
   const balances = balancesFromScanned(read.value, walk.lines, currency);
 
-  return { walk, balances, validation: validate(walk.lines, balances), mapping: null, grid: null };
+  /*
+   * The scanned path gets the chain too, and it is worth more here than anywhere else: this is
+   * the one path where a model reports the values themselves (`0003`), so a running balance it
+   * transcribed alongside them is the only arithmetic that can contradict it. It still never
+   * retries -- `0003` forbids that -- but a break is now attributable to a row.
+   */
+  const audit = auditBalanceChain(walk.lines, statedOpening(balances));
+
+  return {
+    walk,
+    balances,
+    validation: validate(walk.lines, balances, audit),
+    mapping: null,
+    grid: null,
+    audit,
+  };
 }
 
 /**
@@ -385,11 +429,29 @@ async function pinnedMapping(
 }
 
 /** What to tell the model about the attempt that did not reconcile. */
-function describe(validation: Validation): string {
-  if (validation.differenceMinor === null) {
-    return "The statement's opening and closing balances could not both be found, so the transactions could not be checked.";
-  }
-  return `The transactions extracted do not reconcile with the statement's balances. They are out by ${validation.differenceMinor} in minor units (credits ${validation.totals.credits}, debits ${validation.totals.debits}).`;
+function describe(validation: Validation, audit: BalanceChainAudit): string {
+  const total =
+    validation.differenceMinor === null
+      ? "The statement's opening and closing balances could not both be found, so the transactions could not be checked."
+      : `The transactions extracted do not reconcile with the statement's balances. They are out by ${validation.differenceMinor} in minor units (credits ${validation.totals.credits}, debits ${validation.totals.debits}).`;
+
+  /*
+   * Where the rows disagreed with the running balance, and not just by how much in total.
+   *
+   * A difference is a single number and says nothing about where to look. "These rows print a
+   * balance the row above plus their own amount does not reach" is a structural observation,
+   * and structure is the question this prompt exists to ask -- so this stays inside `0003`
+   * rather than leaning on it. The model still decides; it is merely no longer guessing about
+   * which part of the document is in dispute.
+   */
+  if (audit.breaks.length === 0) return total;
+
+  const rows = audit.breaks
+    .slice(0, 12)
+    .map((item) => item.rowIndex)
+    .join(", ");
+
+  return `${total} ${audit.breaks.length} row(s) also disagree with the running balance printed beside them, at row ${rows}${audit.breaks.length > 12 ? " and others" : ""}. A column read as the wrong one, or data starting at the wrong row, would do that.`;
 }
 
 /**
@@ -470,4 +532,19 @@ function excludedRows(
     firstDate: found.firstDate,
     lastDate: found.lastDate,
   };
+}
+
+/**
+ * The opening balance, but only where the document is the one claiming it.
+ *
+ * `balancesFromGrid` falls back to unwinding the first extracted line's own amount out of its
+ * running balance, and a figure derived that way cannot be used to check the line it came
+ * from — it would agree with it by construction. So the chain is anchored only on a balance
+ * the statement printed somewhere, and left unanchored otherwise, which costs the first link
+ * and keeps the rest honest.
+ */
+function statedOpening(balances: Balances): bigint | null {
+  return balances.opening.source === "LOCATOR" || balances.opening.source === "STATED"
+    ? balances.opening.minor
+    : null;
 }
