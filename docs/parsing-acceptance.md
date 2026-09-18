@@ -169,10 +169,32 @@ Every statement's first impression, recorded before any fix. This is the eval ar
 | 2 | ICICI Bank | text PDF | ✗ reconciled, 80% of descriptions blank | A narration is a cell taller than the figures beside it, not a row |
 | 3 | Bank of Ireland | text PDF | ✗ 108 of 349 transactions | A statement prints the date once a day, not once a transaction. Relaxing that let an IBAN and an IFSC code into the amount columns |
 | 4 | Bank Statement Example | text PDF | ✗ zero transactions | A date may leave its year to the header. A document's own figures may be mistyped |
+| 5 | Euro account, 2025-12-01 to 2026-09-18 | text PDF | ✗ 404 transactions, DISCREPANCY of ~€8,000 | Under investigation. The parse produced no evidence to read: rows above `firstDataRow` are never visited and never recorded as skipped, so a truncated walk and a complete one are indistinguishable from the outside |
 
-**First-attempt pass rate: 0 of 4. Current streak: 0.**
+**First-attempt pass rate: 0 of 5. Current streak: 0.**
 
-Four documents, nine defects, none of which the test suite could have found — every grid in
-it was one tidy row per transaction, with a full date and well-formed numbers. That is the
-argument for this document, and for the corpus being a completion criterion rather than a
-nicety.
+Five documents, and the fifth is the first whose cause was not apparent from the outcome.
+That is itself the finding: a parse reports a line count and a difference, and neither
+distinguishes "this is what the document says" from "this is what we managed to read". The
+diagnosis it prompted is recorded below.
+
+Four of the first five defects, and none of which the test suite could have found — every
+grid in it was one tidy row per transaction, with a full date and well-formed numbers. That
+is the argument for this document, and for the corpus being a completion criterion rather
+than a nicety.
+
+### What #5 prompted
+
+Recorded here rather than in a commit message, because `0003`'s claim is what is on trial
+and this is the eval artifact.
+
+- **The walk has a blind spot with no trace.** `walkStatement` iterates from
+  `mapping.firstDataRow`; every row above it is unread and absent from `walk.skipped`. A
+  `firstDataRow` set too late deletes transactions silently.
+- **The balance check cannot catch that**, and this document is the second demonstration
+  after Bank of Ireland. `fromBalanceColumn` derives the opening balance from the first
+  *surviving* line, so a truncated walk reconciles against its own truncation and reports a
+  plausible difference rather than a missing quarter of the year.
+- **The model sees 45 head rows and 15 tail rows** of a several-hundred-row grid
+  (`src/statements/sample.ts`) and decides `firstDataRow` and both balance locators from
+  that sample.
