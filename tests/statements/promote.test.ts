@@ -383,3 +383,67 @@ describe("workspace isolation", () => {
     expect(await transactions(first)).toHaveLength(0);
   });
 });
+
+/*
+ * Groups are promoted concurrently, so these exercise more of them than the worker pool
+ * holds at once. A statement of a few rows never leaves the first wave, and would pass
+ * whatever the pool did.
+ */
+describe("a statement with more groups than the pool promotes at once", () => {
+  it("creates exactly one transaction per distinct line", async () => {
+    const f = await fixture();
+    const rows = Array.from({ length: 50 }, (_, index) => ({
+      description: `VENDOR ${index}`,
+      amount: BigInt(100000 + index),
+    }));
+
+    const id = await f.statement(rows);
+
+    expect(await promote(f, id)).toEqual({ created: 50, linked: 0 });
+    expect(await transactions(f)).toHaveLength(50);
+  });
+
+  it("links every line, leaving none stranded", async () => {
+    const f = await fixture();
+    const id = await f.statement(
+      Array.from({ length: 50 }, (_, index) => ({
+        description: `VENDOR ${index}`,
+        amount: BigInt(100000 + index),
+      })),
+    );
+    await promote(f, id);
+
+    const lines = await f.scope.select(statementLines, eq(statementLines.statementId, id));
+    expect(lines).toHaveLength(50);
+    expect(lines.every((line) => line.canonicalTransactionId !== null)).toBe(true);
+  });
+
+  it("still seats repeats within a group by their order in the file", async () => {
+    const f = await fixture();
+    // Every group holds three identical lines, so seating runs while other groups are in
+    // flight -- the case where a shared cursor or a shared `claimed` set would show up.
+    const rows = Array.from({ length: 30 }, (_, index) => ({
+      description: `VENDOR ${index % 10}`,
+      amount: BigInt(100000 + (index % 10)),
+    }));
+
+    const id = await f.statement(rows);
+
+    expect(await promote(f, id)).toEqual({ created: 30, linked: 0 });
+
+    const seats = (await transactions(f)).map((row) => row.occurrenceIndex).sort();
+    expect(seats).toEqual(Array.from({ length: 30 }, (_, index) => index % 3).sort());
+  });
+
+  it("re-uploads without creating a single duplicate", async () => {
+    const f = await fixture();
+    const rows = Array.from({ length: 50 }, (_, index) => ({
+      description: `VENDOR ${index}`,
+      amount: BigInt(100000 + index),
+    }));
+
+    await promote(f, await f.statement(rows));
+    expect(await promote(f, await f.statement(rows))).toEqual({ created: 0, linked: 50 });
+    expect(await transactions(f)).toHaveLength(50);
+  });
+});

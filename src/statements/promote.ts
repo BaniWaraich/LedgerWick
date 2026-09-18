@@ -58,11 +58,27 @@
  * link to.
  */
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import { canonicalTransactions, statementLines } from "../db/schema";
 import type { WorkspaceScope } from "../db/workspace-scope";
 import { normalizeDescription } from "./description";
+
+/**
+ * How many identity groups are promoted at once.
+ *
+ * Groups are independent by construction: each one owns a distinct composite identity, so
+ * no two of them read, seat, or write the same canonical transaction, and the unique index
+ * they could collide on has a different entry for each. Nothing is shared between them
+ * except the connection pool — which is the real limiter, and why this is not larger. The
+ * driver's pool tops out at ten, so a higher number here would only queue inside `postgres`
+ * while making the failure harder to reason about.
+ *
+ * Within a group the work stays strictly sequential. Seating depends on the order lines are
+ * considered — the nth identical line takes the nth seat — so concurrency there would be a
+ * correctness bug, not an optimisation.
+ */
+const GROUP_CONCURRENCY = 10;
 
 /** What one promotion did. Reported so a run can be understood after the fact. */
 export interface Promotion {
@@ -99,17 +115,80 @@ export async function promoteStatement(
     else groups.set(key, [line]);
   }
 
+  /*
+   * Every canonical transaction these groups could possibly match, in one read.
+   *
+   * This used to be a query per group, which is correct and was unusably slow: a statement
+   * of 404 lines issued 404 round trips before writing anything, and on a 300-second
+   * function that alone consumed most of the budget. The set is bounded by the statement's
+   * own value dates, so one statement reads one statement's worth of history.
+   *
+   * Restricting by date is safe because the date is part of the composite identity: a
+   * transaction that matches a group on the full key necessarily carries one of these dates,
+   * so nothing that could have matched is excluded. The full key is still what decides a
+   * match — that happens below, against the same `identityKey` the lines were grouped by,
+   * so the two sides cannot drift apart.
+   */
+  const dates = [...new Set(lines.map((line) => line.valueDate))];
+  const candidates = dates.length
+    ? await scope.select(
+        canonicalTransactions,
+        and(
+          eq(canonicalTransactions.bankAccountId, account.bankAccountId),
+          inArray(canonicalTransactions.valueDate, dates),
+        ),
+      )
+    : [];
+
+  const existingByIdentity = new Map<string, CanonicalTransaction[]>();
+  for (const transaction of candidates) {
+    const key = transactionIdentityKey(transaction);
+    const bucket = existingByIdentity.get(key);
+    if (bucket) bucket.push(transaction);
+    else existingByIdentity.set(key, [transaction]);
+  }
+
   let created = 0;
   let linked = 0;
 
-  for (const group of groups.values()) {
-    for (const wasCreated of await promoteGroup(scope, account, group)) {
+  const entries = [...groups.entries()];
+  for (const outcome of await mapWithConcurrency(entries, GROUP_CONCURRENCY, ([key, group]) =>
+    // A copy per group: `promoteGroup` appends what it creates, and that bookkeeping belongs
+    // to the group rather than to the map every group reads from.
+    promoteGroup(scope, account, group, [...(existingByIdentity.get(key) ?? [])]),
+  )) {
+    for (const wasCreated of outcome) {
       if (wasCreated) created += 1;
       else linked += 1;
     }
   }
 
   return { created, linked };
+}
+
+/**
+ * Run `work` over `items`, at most `limit` at a time, preserving input order in the results.
+ *
+ * A worker pool rather than fixed chunks: a chunked version waits for the slowest member of
+ * each batch before starting the next, which on work this uneven — most groups hold one
+ * line, a few hold several — spends most of its time idle.
+ */
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  work: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    for (let index = next++; index < items.length; index = next++) {
+      results[index] = await work(items[index]);
+    }
+  });
+
+  await Promise.all(workers);
+  return results;
 }
 
 /**
@@ -129,25 +208,41 @@ function identityKey(line: StatementLine): string {
   ]);
 }
 
-/** Every line of this statement that shares one composite identity. */
+/**
+ * The composite identity of a canonical transaction, for matching lines against it.
+ *
+ * The mirror of `identityKey`, and deliberately adjacent to it: these two must agree on
+ * every field and on their order, because a key built one way here and another way there
+ * would silently stop matching and quietly create a duplicate for every line. The stored
+ * `descriptionNormalized` is used as-is — it is what `create` wrote from
+ * `normalizeDescription`, so normalizing it again would be normalizing twice on one side
+ * only.
+ */
+function transactionIdentityKey(transaction: CanonicalTransaction): string {
+  return JSON.stringify([
+    transaction.valueDate,
+    transaction.amountMinor.toString(),
+    transaction.direction,
+    transaction.descriptionNormalized,
+  ]);
+}
+
+/**
+ * Every line of this statement that shares one composite identity.
+ *
+ * `existing` is the transactions already carrying that identity, read once for the whole
+ * statement by the caller. This function owns the array from here: it appends what it
+ * creates, so seating stays correct as the group is walked.
+ */
 async function promoteGroup(
   scope: WorkspaceScope,
   account: BoundAccount,
   group: StatementLine[],
+  existing: CanonicalTransaction[],
 ): Promise<boolean[]> {
   const first = group[0];
   const descriptionNormalized = normalizeDescription(first.description);
 
-  const existing = await scope.select(
-    canonicalTransactions,
-    and(
-      eq(canonicalTransactions.bankAccountId, account.bankAccountId),
-      eq(canonicalTransactions.valueDate, first.valueDate),
-      eq(canonicalTransactions.amountMinor, first.amountMinor),
-      eq(canonicalTransactions.direction, first.direction),
-      eq(canonicalTransactions.descriptionNormalized, descriptionNormalized),
-    ),
-  );
   existing.sort((a, b) => a.occurrenceIndex - b.occurrenceIndex);
 
   // The next free seat in this group, taken from the highest occupied index rather than
