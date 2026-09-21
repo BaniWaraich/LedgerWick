@@ -7,6 +7,8 @@
  * `reader.ts` and in `src/statements/pdf-text.ts`.
  */
 
+import type { Inference, InferenceContent } from "../ai/model";
+import type { InvoiceReading } from "../ai/prompts/read-invoice.v1";
 import type { PdfText } from "../statements/pdf-text";
 
 /**
@@ -20,3 +22,11 @@ import type { PdfText } from "../statements/pdf-text";
  * depends on statement parsing. The two features share a library adapter, not a module.
  */
 export type ExtractPdfText = (bytes: Uint8Array) => Promise<PdfText>;
+
+/**
+ * Ask the model what a document is and what it says.
+ *
+ * One call for both questions, for the reason `read-invoice.v1.ts` gives: they are one
+ * reading of one page. The implementation lives in `reader.ts`.
+ */
+export type ReadInvoice = (content: InferenceContent[]) => Promise<Inference<InvoiceReading>>;
