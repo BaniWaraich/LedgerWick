@@ -43,4 +43,8 @@ skills-lock.json
 # which is tracked — see fixtures/README.md.
 /fixtures/statements/inbox/*
 !/fixtures/statements/inbox/.gitkeep
+# The same staging area for invoices (BAN-150). An invoice carries a vendor's address, a
+# GSTIN and often the owner's own name, so it is redacted on the way out, not on the way in.
+/fixtures/invoices/inbox/*
+!/fixtures/invoices/inbox/.gitkeep
 bench/out/
