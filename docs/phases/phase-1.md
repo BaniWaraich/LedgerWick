@@ -422,7 +422,20 @@ it once, entry-agnostic, is what keeps that true.
 outcomes, not failures — the document stays stored, is never deleted by automation, and remains
 manually linkable. Classification stays three-valued and is never flattened to a boolean. Model
 output is schema-validated before anything persists, and validation failure does not crash the
-workflow. OCR and model choices are made against fixtures, with the result recorded.
+workflow. The binary invariants in `docs/extraction-acceptance.md` hold and the pipeline runs end
+to end on real invoices.
+
+**Quality is a separate bar, and it does not gate this feature** — the same split feature D
+carries, for a stronger reason. Parsing has the balance equation; an invoice has no
+arithmetic check of any kind, so `0010` can catch a misread span and nothing can catch a
+span read off the wrong line. That bar is six consecutive unseen invoices understood
+correctly on first attempt, it is earned across the rest of the phase, and it is a condition
+of **Phase 1** closing rather than of F closing. `docs/extraction-acceptance.md` holds the
+criteria and the log; `BAN-152` is the standing prompt, and `BAN-150` is the corpus it needs.
+
+What this section said before was that OCR and model choices be "made against fixtures, with
+the result recorded". That is the same "measured at least once" formulation that was
+corrected for D — an activity rather than a threshold.
 
 ---
 
@@ -677,3 +690,7 @@ twice, and only genuinely new payments appear in the queue.
 And the parser has earned the streak in `docs/parsing-acceptance.md` — six consecutive unseen
 statements read correctly on first attempt. Phase 1 is not complete on a parser that has only
 ever been right about documents it was repaired against.
+
+And document understanding has earned the streak in `docs/extraction-acceptance.md`, on the
+same terms and for the same reason. A reconciliation is only as good as the amounts on the
+documents it matched.
