@@ -64,6 +64,13 @@
       "when": 1789717758307,
       "tag": "0008_awesome_celestials",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1789998092787,
+      "tag": "0009_brown_talkback",
+      "breakpoints": true
     }
   ]
 }

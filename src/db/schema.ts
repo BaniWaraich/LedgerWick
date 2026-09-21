@@ -554,10 +554,21 @@ export const invoices = pgTable(
   ],
 );
 
-/** An invoice may be represented by several files. */
+/**
+ * An invoice may be represented by several files.
+ *
+ * Carries `workspaceId` although both of its foreign keys already reach one, for the same
+ * reason `vendor_aliases` does: `docs/architecture.md §5.2` enforces isolation in
+ * application code, and `workspace-scope.ts` only guards a table it can filter. Without the
+ * column this join would be the one table written outside the scope object, which is
+ * exactly the single missing filter the design exists to make impossible.
+ */
 export const invoiceDocuments = pgTable(
   "invoice_documents",
   {
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
     invoiceId: uuid("invoice_id")
       .notNull()
       .references(() => invoices.id, { onDelete: "cascade" }),
@@ -566,7 +577,10 @@ export const invoiceDocuments = pgTable(
       .references(() => supportingDocuments.id, { onDelete: "cascade" }),
     isPrimary: boolean("is_primary").notNull().default(false),
   },
-  (t) => [uniqueIndex("invoice_documents_pk").on(t.invoiceId, t.documentId)],
+  (t) => [
+    uniqueIndex("invoice_documents_pk").on(t.invoiceId, t.documentId),
+    index("invoice_documents_workspace_idx").on(t.workspaceId),
+  ],
 );
 
 /* ------------------------------------------------------------------ reconciliation */

@@ -1,0 +1,3 @@
+ALTER TABLE "invoice_documents" ADD COLUMN "workspace_id" uuid NOT NULL;--> statement-breakpoint
+ALTER TABLE "invoice_documents" ADD CONSTRAINT "invoice_documents_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "invoice_documents_workspace_idx" ON "invoice_documents" USING btree ("workspace_id");
