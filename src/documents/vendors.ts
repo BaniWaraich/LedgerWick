@@ -23,6 +23,12 @@
  * point of normalizing at all.
  */
 
+import { inArray } from "drizzle-orm";
+
+import { vendorAliases, vendors } from "../db/schema";
+import type { WorkspaceScope } from "../db/workspace-scope";
+import type { VendorNames } from "./fields";
+
 /**
  * Payment processors and transfer rails, whose name is written *in front of* the vendor's.
  *
@@ -188,4 +194,84 @@ export function vendorLookupKeys(names: readonly (string | null | undefined)[]):
   }
 
   return keys;
+}
+
+/**
+ * Find the vendor an invoice's names refer to, or record a new one.
+ *
+ * spec: docs/workflows/manual-invoice-upload.md §7
+ * invariant: docs/domain-model.md §10 invariant 18 — Business Knowledge comes only from a
+ * confirmed decision.
+ *
+ * Lookup is by normalized alias rather than by name, which is what makes the three forms of
+ * `§7`'s worked example find each other. Every name the document gave is searched, because
+ * any one of them may be the one already recorded.
+ *
+ * **Every alias written here is unconfirmed, always.** An invoice is evidence, not a
+ * decision: it is good reason to believe `ABC Foods Private Limited` trades as `ABC Foods`,
+ * and it is not the user saying so. `architecture.md §11` draws that line — "Unconfirmed
+ * model guesses should not automatically become permanent business facts" — and only
+ * feature H, acting on a confirmation, may set `confirmed`. Nothing in this module does.
+ *
+ * Returns null when the document named nobody, which is not the same as naming someone we
+ * have not seen: there is no vendor to create from a page with no issuer on it.
+ */
+export async function resolveVendor(
+  scope: WorkspaceScope,
+  names: VendorNames,
+): Promise<string | null> {
+  const keys = vendorLookupKeys([names.legalName, names.tradeName, ...names.aliases]);
+  if (keys.length === 0) return null;
+
+  const existing = await findByAliases(scope, keys);
+  if (existing) return existing;
+
+  /*
+   * The display name is what a person would call them, and the legal name is kept beside
+   * it. `vendors.name` is shown; the normalized keys are not, and are never shown.
+   */
+  const [vendor] = await scope.insert(vendors, {
+    name: names.tradeName ?? names.legalName ?? keys[0],
+    legalName: names.legalName,
+  });
+
+  for (const key of keys) {
+    try {
+      await scope.insert(vendorAliases, {
+        vendorId: vendor.id,
+        alias: key,
+        aliasNormalized: key,
+        confirmed: false,
+      });
+    } catch (error) {
+      /*
+       * Another document reached this vendor first.
+       *
+       * `vendor_aliases_identity_idx` is unique on (workspace, normalized alias), and
+       * leaning on it rather than checking first is the pattern `src/requirements/
+       * identify.ts` already uses: a check-then-insert has a window between the two, and
+       * two Gmail attachments from one vendor arriving together sit in exactly that window.
+       *
+       * The loser keeps the vendor row it created, which is then unreachable by lookup and
+       * harmless -- an orphan, not a duplicate anyone sees. Feature H's merge screen is
+       * where that would be tidied, and phase-1.md §3 defers it deliberately.
+       */
+      if (!isUniqueViolation(error)) throw error;
+    }
+  }
+
+  // Re-read rather than returning `vendor.id`: if any key collided, the vendor that owns it
+  // is the one every later document will find, and returning the orphan would split them.
+  return (await findByAliases(scope, keys)) ?? vendor.id;
+}
+
+/** The vendor owning any of these normalized aliases, if one already does. */
+async function findByAliases(scope: WorkspaceScope, keys: string[]): Promise<string | null> {
+  const rows = await scope.select(vendorAliases, inArray(vendorAliases.aliasNormalized, keys));
+  return rows[0]?.vendorId ?? null;
+}
+
+/** Postgres' unique-violation SQLSTATE, as `tests/helpers/db.ts` also asserts on. */
+function isUniqueViolation(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "23505";
 }
