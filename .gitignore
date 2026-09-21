@@ -43,3 +43,4 @@ skills-lock.json
 # which is tracked — see fixtures/README.md.
 /fixtures/statements/inbox/*
 !/fixtures/statements/inbox/.gitkeep
+bench/out/
