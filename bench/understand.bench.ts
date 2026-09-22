@@ -138,14 +138,14 @@ function renderFields(read: InvoiceReading, sourceText?: string): string {
    * thing this bench can surface -- and it is invisible from the value alone, because an
    * invented figure parses exactly as cleanly as a real one.
    */
-  const mark = (span: string | null): string => {
-    if (span === null || sourceText === undefined) return " ";
+  const mark = (span: string | null, checked = true): string => {
+    if (span === null || sourceText === undefined || !checked) return " ";
     return anchored(span, sourceText) ? " " : "!";
   };
 
-  const line = (label: string, span: string | null, value: string) =>
+  const line = (label: string, span: string | null, value: string, checked = true) =>
     rows.push(
-      `${mark(span)} ${label.padEnd(13)} ${(span === null ? "—" : JSON.stringify(span)).padEnd(24)} -> ${value}`,
+      `${mark(span, checked)} ${label.padEnd(13)} ${(span === null ? "—" : JSON.stringify(span)).padEnd(24)} -> ${value}`,
     );
 
   line(
@@ -160,7 +160,15 @@ function renderFields(read: InvoiceReading, sourceText?: string): string {
     read.invoiceDate?.text ?? null,
     `${fields.invoiceDate ?? "—"}  (${read.dateOrder})`,
   );
-  line("invoiceNumber", read.invoiceNumber, read.invoiceNumber ?? "—");
+  /*
+   * Not anchored, and therefore not marked.
+   *
+   * `fields.ts` checks the money and date spans only. An invoice number is an identifier
+   * rather than a value -- it carries letters, and the digit reduction the anchor uses would
+   * compare `ABC-2201` and `XYZ-2201` as the same. Marking it here would imply a guarantee
+   * that does not exist, which is worse than showing nothing.
+   */
+  line("invoiceNumber", read.invoiceNumber, read.invoiceNumber ?? "—", false);
 
   const names = read.vendor;
   rows.push("");
