@@ -148,7 +148,14 @@ export async function understandDocument(
   }
 
   const reading = inference.value;
-  const fields = invoiceFieldsFrom(reading);
+
+  /*
+   * The extracted text goes in alongside the reading, so that every span can be checked
+   * against it (`0010`). Undefined on the visual path, where there is no text and therefore
+   * nothing to check -- the model read the picture, and only the corpus can say whether it
+   * read it correctly.
+   */
+  const fields = invoiceFieldsFrom(reading, content.path === "TEXT" ? content.text : undefined);
 
   if (reading.classification === "IS_NOT_INVOICE") {
     return settle(scope, documentId, "NOT_AN_INVOICE", reading.classification, reading.reason);

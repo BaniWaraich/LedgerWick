@@ -416,3 +416,58 @@ describe("infrastructure failure", () => {
     expect(await scope.select(schema.invoices)).toHaveLength(0);
   });
 });
+
+describe("a figure the model did not read off the document", () => {
+  it("is dropped, and takes the document to UNREADABLE", async () => {
+    // decision 0010, as corrected: the model is in the value path here, so the characters
+    // it reports have to be on the page. A total nobody can find is the failure the anchor
+    // exists to prevent, and nothing is persisted rather than a plausible wrong number.
+    const { scope, store, documentId } = await seedDocument();
+
+    const outcome = await understandDocument(
+      scope,
+      documentId,
+      depsReading(reading({ total: { text: "9,99,999.00" } }), store),
+    );
+
+    expect(outcome.state).toBe("UNREADABLE");
+    expect(outcome.invoiceId).toBeNull();
+    expect(await scope.select(schema.invoices)).toHaveLength(0);
+    expect(await scope.select(schema.invoiceDocuments)).toHaveLength(0);
+  });
+
+  it("leaves the document stored and linkable, as every other outcome does", async () => {
+    const { scope, store, documentId } = await seedDocument();
+
+    await understandDocument(
+      scope,
+      documentId,
+      depsReading(reading({ total: { text: "9,99,999.00" } }), store),
+    );
+
+    const row = await documentRow(scope, documentId);
+    expect(await store.get(row!.storageRef)).not.toBeNull();
+    expect(row?.classification).toBe("IS_INVOICE");
+  });
+
+  it("is not checked at all on a document with no text to check against", async () => {
+    // The asymmetry is deliberate and is asserted so it cannot be quietly removed. A
+    // photograph yields no ground truth, so the same reading that fails above succeeds
+    // here -- which is the higher risk 0003 already accepts on the scanned path, not a bug.
+    const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, ...new TextEncoder().encode("photo")]);
+    const { scope, store, documentId } = await seedDocument(jpeg);
+
+    const outcome = await understandDocument(
+      scope,
+      documentId,
+      depsReading(reading({ total: { text: "9,99,999.00" } }), store),
+    );
+
+    expect(outcome.state).toBe("EXTRACTED");
+    const invoice = await scope.selectOne(
+      schema.invoices,
+      eq(schema.invoices.id, outcome.invoiceId!),
+    );
+    expect(invoice?.totalMinor).toBe(99_999_900n);
+  });
+});

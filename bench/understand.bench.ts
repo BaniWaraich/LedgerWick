@@ -58,7 +58,7 @@ import {
   type InvoiceReading,
 } from "../src/ai/prompts/read-invoice.v1";
 import type { ExtractPdfText } from "../src/documents/contracts";
-import { hasMinimumFields, invoiceFieldsFrom } from "../src/documents/fields";
+import { anchored, hasMinimumFields, invoiceFieldsFrom } from "../src/documents/fields";
 import { readDocumentContent } from "../src/documents/text";
 import { normalizeVendorName, vendorLookupKeys } from "../src/documents/vendors";
 import type { PositionedText } from "../src/statements/pdf-grid";
@@ -127,13 +127,25 @@ async function reading(
  * the document open: the question is never "is 12000000 plausible" but "is Rs. 1,20,000.00
  * the line on this page that a person would pay".
  */
-function renderFields(read: InvoiceReading): string {
-  const fields = invoiceFieldsFrom(read);
+function renderFields(read: InvoiceReading, sourceText?: string): string {
+  const fields = invoiceFieldsFrom(read, sourceText);
   const rows: string[] = [];
+
+  /*
+   * Whether the characters are on the page, shown per field rather than only as a drop.
+   *
+   * `!` marks a span the model produced rather than read, which is the single most valuable
+   * thing this bench can surface -- and it is invisible from the value alone, because an
+   * invented figure parses exactly as cleanly as a real one.
+   */
+  const mark = (span: string | null): string => {
+    if (span === null || sourceText === undefined) return " ";
+    return anchored(span, sourceText) ? " " : "!";
+  };
 
   const line = (label: string, span: string | null, value: string) =>
     rows.push(
-      `  ${label.padEnd(13)} ${(span === null ? "—" : JSON.stringify(span)).padEnd(24)} -> ${value}`,
+      `${mark(span)} ${label.padEnd(13)} ${(span === null ? "—" : JSON.stringify(span)).padEnd(24)} -> ${value}`,
     );
 
   line(
@@ -164,10 +176,19 @@ function renderFields(read: InvoiceReading): string {
 
   if (fields.unparsed.length > 0) {
     rows.push("");
-    rows.push("  DROPPED — a span the model reported that would not parse:");
+    rows.push("  DROPPED:");
     for (const entry of fields.unparsed) {
-      rows.push(`    ${entry.field.padEnd(13)} ${JSON.stringify(entry.text)}`);
+      const why =
+        entry.reason === "NOT_ON_PAGE"
+          ? "NOT ON PAGE — the model produced these characters rather than reading them"
+          : "would not parse as a value";
+      rows.push(`    ${entry.field.padEnd(13)} ${JSON.stringify(entry.text).padEnd(24)} ${why}`);
     }
+  }
+
+  if (sourceText === undefined) {
+    rows.push("");
+    rows.push("  (visual path — no extracted text, so nothing could be anchored)");
   }
 
   rows.push("");
@@ -245,7 +266,7 @@ describe("extraction bench", () => {
           : { type: "file", data: content.bytes, mediaType: content.mediaType },
       );
 
-      const rendered = renderFields(read);
+      const rendered = renderFields(read, content.path === "TEXT" ? content.text : undefined);
       console.log(rendered);
 
       await dump(name, {

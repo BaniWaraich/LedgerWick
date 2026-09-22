@@ -112,7 +112,8 @@ measuring anything is precisely what `architecture.md §21.4` forbids:
 | Total correct, scan or photograph | TBD | `0003` accepts a higher error rate where a model reads values with nothing deterministic beneath it. The gap between this row and the one above is the OCR decision (`§21.1`). |
 | Date correct | TBD | Matching is tolerant on date, so this may sit below the total's bar — but only by a measured amount. |
 | Vendor resolved to the right entity | TBD | A vendor split in two is a duplicate the user sees; a vendor wrongly merged is two companies' invoices in one place. |
-| Mislocation rate | TBD | Fields that parsed cleanly and came from the wrong line. The error `0010` cannot catch, and the reason the bench dumps spans beside values. |
+| Hallucination rate | TBD | Spans the model reported that are not in the extracted text at all. Counted automatically on the text path since the anchor check landed, and recorded as `NOT_ON_PAGE`. The one error in this table the system can now see for itself. |
+| Mislocation rate | TBD | Fields that parsed cleanly, anchored to the page, and still came from the wrong line — the subtotal reported as the total. The error neither `0010` nor the anchor can catch, and the reason the bench dumps spans beside values. |
 | Schema-valid output rate | TBD | `testing-strategy.md` names it as an eval measure. A refusal is an outcome; a high refusal rate is a prompt problem. |
 
 Filling this table is the work `§21.1` (which OCR provider) and `§21.2` (which model) were
