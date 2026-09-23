@@ -1,10 +1,11 @@
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { storeSupportingDocument } from "../../src/documents/intake";
 import * as schema from "../../src/db/schema";
 import { WorkspaceScope } from "../../src/db/workspace-scope";
 import { workspacePrefix } from "../../src/storage/keys";
-import { createTestDb, seedWorkspace, type TestDb } from "../helpers/db";
+import { createTestDb, seedBankAccount, seedWorkspace, type TestDb } from "../helpers/db";
 import { FakeDocumentStore } from "../storage/fake-document-store";
 
 let test: TestDb;
@@ -168,5 +169,106 @@ describe("storing across a workspace boundary", () => {
 
     expect(await first.scope.select(schema.supportingDocuments)).toHaveLength(1);
     expect(await second.scope.select(schema.supportingDocuments)).toHaveLength(0);
+  });
+});
+
+describe("an upload that already knows its payment", () => {
+  // spec: docs/workflows/invoice-match-review.md §6 — entering from review pre-binds the
+  // transaction, and feature G then skips matching entirely.
+  it("binds the document to the transaction the user chose", async () => {
+    const store = new FakeDocumentStore();
+    const seeded = await seedWorkspace(test.db);
+    const scope = new WorkspaceScope(test.db, seeded.workspace.id, seeded.user.id);
+    const account = await seedBankAccount(test.db, seeded.workspace.id);
+    const [txn] = await test.db
+      .insert(schema.canonicalTransactions)
+      .values({
+        workspaceId: seeded.workspace.id,
+        bankAccountId: account.id,
+        valueDate: "2026-04-14",
+        amountMinor: 2000n,
+        direction: "DEBIT",
+        currency: "INR",
+        description: "ANTHROPIC",
+        descriptionNormalized: "anthropic",
+        occurrenceIndex: 0,
+      })
+      .returning();
+
+    const { documentId } = await storeSupportingDocument(
+      scope,
+      store,
+      { bytes: new Uint8Array([1]), filename: "invoice.pdf", contentType: "application/pdf" },
+      { source: "MANUAL_UPLOAD", canonicalTransactionId: txn.id },
+      async () => {},
+    );
+
+    const [row] = await test.db
+      .select()
+      .from(schema.supportingDocuments)
+      .where(eq(schema.supportingDocuments.id, documentId));
+
+    expect(row.canonicalTransactionId).toBe(txn.id);
+  });
+
+  it("stores the document unbound when the payment is not this workspace's", async () => {
+    // A transaction id from the client is a claim. The scope filters the lookup, so
+    // another workspace's payment reads as absent -- and the document is still stored,
+    // because nothing here is worth losing the file over.
+    const store = new FakeDocumentStore();
+    const mine = await seedWorkspace(test.db);
+    const theirs = await seedWorkspace(test.db, "Someone Else");
+    const theirAccount = await seedBankAccount(test.db, theirs.workspace.id);
+    const [theirTxn] = await test.db
+      .insert(schema.canonicalTransactions)
+      .values({
+        workspaceId: theirs.workspace.id,
+        bankAccountId: theirAccount.id,
+        valueDate: "2026-04-14",
+        amountMinor: 2000n,
+        direction: "DEBIT",
+        currency: "INR",
+        description: "ANTHROPIC",
+        descriptionNormalized: "anthropic",
+        occurrenceIndex: 0,
+      })
+      .returning();
+
+    const scope = new WorkspaceScope(test.db, mine.workspace.id, mine.user.id);
+    const { documentId } = await storeSupportingDocument(
+      scope,
+      store,
+      { bytes: new Uint8Array([1]), filename: "invoice.pdf", contentType: "application/pdf" },
+      { source: "MANUAL_UPLOAD", canonicalTransactionId: theirTxn.id },
+      async () => {},
+    );
+
+    const [row] = await test.db
+      .select()
+      .from(schema.supportingDocuments)
+      .where(eq(schema.supportingDocuments.id, documentId));
+
+    expect(row.canonicalTransactionId).toBeNull();
+  });
+
+  it("leaves an ordinary upload unbound", async () => {
+    const store = new FakeDocumentStore();
+    const seeded = await seedWorkspace(test.db);
+    const scope = new WorkspaceScope(test.db, seeded.workspace.id, seeded.user.id);
+
+    const { documentId } = await storeSupportingDocument(
+      scope,
+      store,
+      { bytes: new Uint8Array([1]), filename: "invoice.pdf", contentType: "application/pdf" },
+      { source: "MANUAL_UPLOAD" },
+      async () => {},
+    );
+
+    const [row] = await test.db
+      .select()
+      .from(schema.supportingDocuments)
+      .where(eq(schema.supportingDocuments.id, documentId));
+
+    expect(row.canonicalTransactionId).toBeNull();
   });
 });

@@ -21,7 +21,7 @@
 
 import { eq } from "drizzle-orm";
 
-import { supportingDocuments } from "../db/schema";
+import { canonicalTransactions, supportingDocuments } from "../db/schema";
 import type { WorkspaceScope } from "../db/workspace-scope";
 import type { DocumentStore } from "../storage/document-store";
 import { documentKey } from "../storage/keys";
@@ -40,6 +40,19 @@ export interface DocumentOrigin {
    * owns its shape, and this module would only be guessing at it.
    */
   readonly sourceMetadata?: unknown;
+  /**
+   * The payment this document is evidence of, where the user already said.
+   *
+   * Set when an upload starts from match review (`invoice-match-review.md §6`): the
+   * transaction is known before the document is read, and feature G skips matching
+   * entirely rather than computing a shortlist to agree with them.
+   *
+   * Bound here rather than after understanding because it is true from the moment the
+   * file arrives, and because a document that turns out not to be an invoice is then
+   * already attached to its payment -- `domain-model.md §5.1`'s second branch, with no
+   * second code path to keep in step.
+   */
+  readonly canonicalTransactionId?: string;
 }
 
 /** What storing one document produced. */
@@ -69,7 +82,28 @@ export async function storeSupportingDocument(
   origin: DocumentOrigin,
   publish: PublishStored,
 ): Promise<StoredDocument> {
+  /*
+   * A transaction id from the client is a claim, not a fact.
+   *
+   * `docs/definition-of-done.md`: no workspace identifier comes from the client without
+   * being checked against the session. The same holds for anything reached through one --
+   * the scope filters the lookup, so a transaction belonging to another workspace reads
+   * as absent and the document is stored unbound rather than bound to a stranger's
+   * payment. Silently unbound rather than refused, for the reason the rest of this module
+   * gives: nothing is worth losing the document over.
+   */
+  const bound =
+    origin.canonicalTransactionId === undefined
+      ? null
+      : ((
+          await scope.selectOne(
+            canonicalTransactions,
+            eq(canonicalTransactions.id, origin.canonicalTransactionId),
+          )
+        )?.id ?? null);
+
   const [document] = await scope.insert(supportingDocuments, {
+    canonicalTransactionId: bound,
     // Replaced below with the key the store returned. Never left as this value: a row whose
     // storage_ref does not resolve claims to hold a document the system cannot produce.
     storageRef: "",
