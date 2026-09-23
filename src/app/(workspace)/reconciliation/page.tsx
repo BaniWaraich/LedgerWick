@@ -157,11 +157,14 @@ function EmptyState({ hasRun }: { hasRun: boolean }) {
       </p>
       <p className={styles.emptyBody}>
         {hasRun
-          ? "You can still upload invoices you already have, once matching arrives."
+          ? "You can still upload invoices you already have, and we'll look for the payment."
           : "Upload your bank statements and we'll work out which payments need a document."}
       </p>
-      <Link className={styles.emptyAction} href="/statements/upload">
-        Upload statements
+      <Link
+        className={styles.emptyAction}
+        href={hasRun ? "/documents/upload" : "/statements/upload"}
+      >
+        {hasRun ? "Upload an invoice" : "Upload statements"}
       </Link>
     </div>
   );
