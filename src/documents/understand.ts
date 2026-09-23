@@ -74,6 +74,23 @@ export interface UnderstandDeps {
  * extraction among the workflows that must survive being run twice, and a retry after a
  * timeout that had in fact succeeded is the ordinary case rather than a rare one.
  */
+/**
+ * Whether this outcome leaves an invoice for feature G to find a payment for.
+ *
+ * Lives here rather than in the Inngest shell that asks it, because the shell imports a
+ * model provider and this has to be reachable from a test that does not.
+ *
+ * `UNREADABLE` and `NOT_AN_INVOICE` are outcomes rather than failures -- the document
+ * stays stored and the user may still link it by hand (`state-machines.md §3`) -- and
+ * neither produces an invoice. A null state is a document another attempt already
+ * finished, or one that is not this workspace's.
+ */
+export function leavesAnInvoice(
+  outcome: UnderstandingOutcome,
+): outcome is UnderstandingOutcome & { invoiceId: string } {
+  return outcome.state === "EXTRACTED" && outcome.invoiceId !== null;
+}
+
 export async function understandDocument(
   scope: WorkspaceScope,
   documentId: string,

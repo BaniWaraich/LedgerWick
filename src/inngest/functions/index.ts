@@ -8,12 +8,14 @@
 
 import { identifyRequirementsFunction } from "./identify-requirements";
 import { identifyStatementFunction } from "./identify-statement";
+import { matchInvoiceFunction } from "./match-invoice";
 import { parseStatementFunction } from "./parse-statement";
 import { understandDocumentFunction } from "./understand-document";
 
 export const functions = [
   identifyRequirementsFunction,
   identifyStatementFunction,
+  matchInvoiceFunction,
   parseStatementFunction,
   understandDocumentFunction,
 ];

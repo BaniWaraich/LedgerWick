@@ -9,10 +9,10 @@
 
 import { openWorkspaceForJob } from "../../auth/background";
 import { readInvoice } from "../../documents/reader";
-import { understandDocument } from "../../documents/understand";
+import { leavesAnInvoice, understandDocument } from "../../documents/understand";
 import { extractPdfText } from "../../statements/pdf-text";
 import { getDocumentStore } from "../../storage/blob-store";
-import { documentStored, inngest } from "../client";
+import { documentStored, inngest, invoiceExtracted } from "../client";
 
 export const understandDocumentFunction = inngest.createFunction(
   {
@@ -49,9 +49,10 @@ export const understandDocumentFunction = inngest.createFunction(
      * opposite of a statement, where a stuck row is a spinner the user watches forever.
      */
   },
-  async ({ event, step }) =>
-    step.run("understand", async () => {
-      const { workspaceId, userId, documentId } = event.data;
+  async ({ event, step }) => {
+    const { workspaceId, userId, documentId } = event.data;
+
+    const outcome = await step.run("understand", async () => {
       const scope = await openWorkspaceForJob(userId, workspaceId);
 
       return understandDocument(scope, documentId, {
@@ -59,5 +60,14 @@ export const understandDocumentFunction = inngest.createFunction(
         extractPdfText,
         read: readInvoice,
       });
-    }),
+    });
+
+    if (leavesAnInvoice(outcome)) {
+      await step.sendEvent("match", [
+        invoiceExtracted.create({ workspaceId, userId, invoiceId: outcome.invoiceId }),
+      ]);
+    }
+
+    return outcome;
+  },
 );
