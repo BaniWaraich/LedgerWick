@@ -16,6 +16,8 @@ import {
   describe,
   describeAll,
   evidenceFor,
+  fromStored,
+  toStored,
   vendorKeyAppearsIn,
   type Evidence,
   type InvoiceFacts,
@@ -326,5 +328,54 @@ suite("the sentences the review screen prints", () => {
 
     expect(describeAll(resolved)).toContain("Vendor is a known alias of ANTHROPIC");
     expect(describeAll(contains)).toContain("Vendor name appears in ANTHROPIC");
+  });
+});
+
+suite("evidence on its way into the database", () => {
+  it("survives a round trip through JSON with its amounts intact", () => {
+    // Found by a failing test, not by reading: jsonb cannot serialize a BigInt, and
+    // money is bigint everywhere in this system by architecture.md's first schema rule.
+    const original = evidenceFor(
+      invoice(),
+      transaction({ amountMinor: 2015n }),
+      { agreement: "RESOLVED" },
+      WINDOW,
+    );
+
+    const returned = fromStored(JSON.parse(JSON.stringify(toStored(original))));
+    const amount = pick(returned, "AMOUNT");
+
+    expect(amount.invoiceMinor).toBe(2000n);
+    expect(amount.transactionMinor).toBe(2015n);
+    expect(amount.deltaMinor).toBe(15n);
+  });
+
+  it("keeps an amount too large for a double exact", () => {
+    // The whole reason money is not a number. A float would round this silently.
+    const huge = 9007199254740993n;
+    const original = evidenceFor(
+      invoice({ totalMinor: huge }),
+      transaction({ amountMinor: huge }),
+      { agreement: "NONE" },
+      WINDOW,
+    );
+
+    const returned = fromStored(JSON.parse(JSON.stringify(toStored(original))));
+
+    expect(pick(returned, "AMOUNT").transactionMinor).toBe(huge);
+  });
+
+  it("still reads as the same sentences afterwards", () => {
+    const original = evidenceFor(invoice(), transaction(), { agreement: "RESOLVED" }, WINDOW);
+    const returned = fromStored(JSON.parse(JSON.stringify(toStored(original))));
+
+    expect(describeAll(returned)).toEqual(describeAll(original));
+  });
+
+  it("gives an empty list for a column holding something unexpected", () => {
+    // A row written before this shape existed, or by hand. Better an empty case than a
+    // screen that throws while rendering someone's reconciliation.
+    expect(fromStored(null)).toEqual([]);
+    expect(fromStored({})).toEqual([]);
   });
 });

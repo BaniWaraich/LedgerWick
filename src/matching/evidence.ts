@@ -413,3 +413,50 @@ export function describe(evidence: Evidence): string | null {
 export function describeAll(evidence: readonly Evidence[]): string[] {
   return evidence.map(describe).filter((line): line is string => line !== null);
 }
+
+/**
+ * Evidence on its way into `jsonb`, and back.
+ *
+ * JSON has no integer big enough to be trusted with money, so the amounts go to text and
+ * come back as `bigint`. The alternative -- holding them as `number` -- is the one thing
+ * `docs/architecture.md` rules out at the top of the schema: "Money is stored as integer
+ * minor units ... never as a float."
+ *
+ * The conversion is here, beside the type it converts, rather than in `match.ts`. A caller
+ * that writes evidence with `JSON.stringify` and no thought gets a runtime error today
+ * ("Do not know how to serialize a BigInt"), which is how this was found; a caller that
+ * reads it back without `fromStored` would get strings where it expected amounts, silently.
+ */
+export type StoredEvidence = Omit<Evidence, "invoiceMinor" | "transactionMinor" | "deltaMinor"> &
+  Record<string, unknown>;
+
+/** Amounts to text, so `jsonb` can hold them. */
+export function toStored(evidence: readonly Evidence[]): unknown[] {
+  return evidence.map((item) =>
+    item.kind === "AMOUNT"
+      ? {
+          ...item,
+          invoiceMinor: item.invoiceMinor === null ? null : item.invoiceMinor.toString(),
+          transactionMinor: item.transactionMinor.toString(),
+          deltaMinor: item.deltaMinor === null ? null : item.deltaMinor.toString(),
+        }
+      : item,
+  );
+}
+
+/** Text back to amounts, for anything that has to compare them again. */
+export function fromStored(stored: unknown): Evidence[] {
+  if (!Array.isArray(stored)) return [];
+
+  return stored.map((item) => {
+    const row = item as Record<string, unknown>;
+    if (row.kind !== "AMOUNT") return row as unknown as Evidence;
+
+    return {
+      ...row,
+      invoiceMinor: row.invoiceMinor === null ? null : BigInt(String(row.invoiceMinor)),
+      transactionMinor: BigInt(String(row.transactionMinor)),
+      deltaMinor: row.deltaMinor === null ? null : BigInt(String(row.deltaMinor)),
+    } as Evidence;
+  });
+}
