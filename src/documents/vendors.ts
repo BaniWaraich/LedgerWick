@@ -25,6 +25,7 @@
 
 import { inArray } from "drizzle-orm";
 
+import { isUniqueViolation } from "../db/errors";
 import { vendorAliases, vendors } from "../db/schema";
 import type { WorkspaceScope } from "../db/workspace-scope";
 import type { VendorNames } from "./fields";
@@ -269,9 +270,4 @@ export async function resolveVendor(
 async function findByAliases(scope: WorkspaceScope, keys: string[]): Promise<string | null> {
   const rows = await scope.select(vendorAliases, inArray(vendorAliases.aliasNormalized, keys));
   return rows[0]?.vendorId ?? null;
-}
-
-/** Postgres' unique-violation SQLSTATE, as `tests/helpers/db.ts` also asserts on. */
-function isUniqueViolation(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === "23505";
 }

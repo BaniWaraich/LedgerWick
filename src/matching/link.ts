@@ -33,6 +33,7 @@
 
 import { and, eq, isNull } from "drizzle-orm";
 
+import { isUniqueViolation } from "../db/errors";
 import { invoiceDocuments, invoiceRequirements, invoices, supportingDocuments } from "../db/schema";
 import type { WorkspaceScope } from "../db/workspace-scope";
 
@@ -49,21 +50,6 @@ export type LinkOutcome =
    * actually happened is that the payment already has an invoice.
    */
   | { readonly linked: false; readonly reason: string };
-
-/**
- * Postgres' unique-violation SQLSTATE, as `tests/helpers/db.ts` also asserts on.
- *
- * Drizzle wraps the driver error and puts the original on `cause`, so the code is one
- * level down from where it looks like it should be. Checking only the top level reads as
- * correct and quietly never matches, which is how a refusal this function is supposed to
- * return becomes a 500 the user sees.
- */
-function isUniqueViolation(error: unknown): boolean {
-  const driver = ((error as { cause?: unknown } | null)?.cause ?? error) as {
-    code?: string;
-  } | null;
-  return driver?.code === "23505";
-}
 
 /**
  * Resolve the requirement on this transaction, if there is one.
