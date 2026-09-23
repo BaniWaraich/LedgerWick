@@ -62,4 +62,19 @@ export const reconciliationRequested = eventType("reconciliation/requested", {
   schema: workspaceEvent,
 });
 
+/**
+ * A supporting document's bytes are stored and its row exists. Understand it.
+ *
+ * One event for both entry paths, because what happens next is the same work:
+ * `retrieve-invoices.md §11.1` requires a retrieved document and an uploaded one to go
+ * through the same classification and extraction, and a second event would be a second
+ * place for one of them to skip it.
+ *
+ * One event per document rather than per upload batch, for the reason `statement/uploaded`
+ * gives: one document that cannot be read must not affect another that can.
+ */
+export const documentStored = eventType("document/stored", {
+  schema: workspaceEvent.extend({ documentId: z.uuid() }),
+});
+
 export const inngest = new Inngest({ id: "ledgerwick" });

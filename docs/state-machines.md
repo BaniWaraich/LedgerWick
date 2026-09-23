@@ -164,9 +164,8 @@ satisfying a requirement.
 
 ```text
 STORED → EXTRACTING → CLASSIFYING → EXTRACTED
-                                 ↘
-                                   UNREADABLE
-                                   NOT_AN_INVOICE
+              ↓             ↓    ↘
+              └──→ UNREADABLE     NOT_AN_INVOICE
 ```
 
 | State            | Meaning                                                                           |
@@ -175,12 +174,28 @@ STORED → EXTRACTING → CLASSIFYING → EXTRACTED
 | `EXTRACTING`     | Text extraction or OCR in progress.                                               |
 | `CLASSIFYING`    | Determining whether the document is an invoice.                                   |
 | `EXTRACTED`      | Invoice information was obtained. An Invoice record exists or can be created.     |
-| `UNREADABLE`     | Text could not be obtained from the document.                                     |
+| `UNREADABLE`     | The document's details could not be obtained. From either stage.                  |
 | `NOT_AN_INVOICE` | The document was read but does not appear to be an invoice or receipt.            |
 
 `UNREADABLE` and `NOT_AN_INVOICE` are outcomes, not failures. The document remains stored
 and the user may still link it manually — see `docs/architecture.md §15`. A document that
 reaches `STORED` is never deleted by an automated process.
+
+**`UNREADABLE` is reached from either stage**, because there are two ways to end up without
+the details and the user's position is the same in both. Extraction reaches it when no text
+and no OCR result could be obtained at all. Classification reaches it when the document was
+read but nothing usable came back — the model could not answer, or answered in a way that
+did not survive its schema, or named no vendor, no amount and no date.
+`docs/workflows/manual-invoice-upload.md §11` gives the user-facing sentence for both:
+*"We couldn't read the details from this document."* Details, not text.
+
+**There is no `FAILED` state, deliberately.** Infrastructure failure — a provider timeout, a
+gateway with no credit, a cold database — is not a fact about the document, and recording it
+on the document would make a retry look like a verdict. Such a document stays in
+`EXTRACTING` or `CLASSIFYING` and the background workflow retries it. That is the line
+`docs/definition-of-done.md` asks to be drawn between recoverable and non-recoverable
+failure: the non-recoverable half is a document a model read and could not make sense of,
+and `UNREADABLE` is where it lands.
 
 ### Classification confidence
 

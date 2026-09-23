@@ -9,9 +9,11 @@
 import { identifyRequirementsFunction } from "./identify-requirements";
 import { identifyStatementFunction } from "./identify-statement";
 import { parseStatementFunction } from "./parse-statement";
+import { understandDocumentFunction } from "./understand-document";
 
 export const functions = [
   identifyRequirementsFunction,
   identifyStatementFunction,
   parseStatementFunction,
+  understandDocumentFunction,
 ];
