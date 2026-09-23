@@ -71,6 +71,13 @@
       "when": 1789998092787,
       "tag": "0009_brown_talkback",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790159139706,
+      "tag": "0010_clammy_magdalene",
+      "breakpoints": true
     }
   ]
 }
