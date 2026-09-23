@@ -19,6 +19,8 @@ import {
   bankAccounts,
   bankStatements,
   canonicalTransactions,
+  invoiceMatchCandidates,
+  invoices,
   vendors,
   workspaces,
 } from "../../src/db/schema";
@@ -229,6 +231,52 @@ describe("statement intake", () => {
       currency: "INR",
     });
     expect(bobAccount.workspaceId).toBe(bob.workspace.id);
+  });
+});
+
+describe("matching", () => {
+  // spec: docs/phases/phase-1.md §7 G · docs/decisions/0011
+  //
+  // The attacks themselves live in `tests/matching/isolation.test.ts`, which enumerates
+  // every scoped table the feature writes to. This is the entry this file requires for
+  // every workspace-scoped feature, and it covers the table matching added.
+  it("keeps one workspace's match candidates out of another's", async () => {
+    // Seeded in Bob's workspace: this file shares one database across its tests, and the
+    // generic check below asserts Alice's scope reads no transactions at all.
+    const aliceScope = await openWorkspace(h.db, alice.user.id, alice.workspace.id);
+    const bobScope = await openWorkspace(h.db, bob.user.id, bob.workspace.id);
+
+    const [account] = await bobScope.select(bankAccounts);
+    const [transaction] = await bobScope.insert(canonicalTransactions, {
+      bankAccountId: account.id,
+      valueDate: "2026-04-14",
+      amountMinor: 2000n,
+      direction: "DEBIT",
+      currency: "USD",
+      description: "ANTHROPIC",
+      descriptionNormalized: "anthropic",
+      occurrenceIndex: 0,
+    });
+    const [invoice] = await bobScope.insert(invoices, { invoiceNumber: "INV-1" });
+    const [candidate] = await bobScope.insert(invoiceMatchCandidates, {
+      invoiceId: invoice.id,
+      canonicalTransactionId: transaction.id,
+      rank: 0,
+      evidence: [],
+    });
+
+    // Alice knows the id and it buys her nothing -- not the evidence, not the amounts.
+    await expect(
+      aliceScope.select(invoiceMatchCandidates, eq(invoiceMatchCandidates.id, candidate.id)),
+    ).resolves.toEqual([]);
+    // Nor can she rewrite what another workspace was shown.
+    await expect(
+      aliceScope.update(
+        invoiceMatchCandidates,
+        { modelVerdict: "SAME" },
+        eq(invoiceMatchCandidates.id, candidate.id),
+      ),
+    ).resolves.toEqual([]);
   });
 });
 
