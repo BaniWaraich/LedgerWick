@@ -108,15 +108,24 @@ export class WorkspaceScope {
    * than `as any`, so the escape stays narrow and the lint rule banning `any` still holds.
    */
 
-  /** Select from a workspace-scoped table. The workspace filter is not optional. */
+  /**
+   * Select from a workspace-scoped table. The workspace filter is not optional.
+   *
+   * `limit` bounds the read itself rather than the result. A caller that means "at most
+   * this many" and slices afterwards has still asked the database for everything, which is
+   * the part that costs, and inside a background function with a wall-clock budget the
+   * difference is the whole point of asking (`src/matching/candidates.ts`).
+   */
   async select<T extends WorkspaceScopedTable>(
     table: T,
     where?: SQL,
+    limit?: number,
   ): Promise<T["$inferSelect"][]> {
-    const rows = await this.db
+    const query = this.db
       .select()
       .from(table as PgTable)
       .where(this.scoped(table, where));
+    const rows = await (limit === undefined ? query : query.limit(limit));
     return rows as T["$inferSelect"][];
   }
 
