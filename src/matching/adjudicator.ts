@@ -14,9 +14,16 @@ import "server-only";
 
 import { inferStructure } from "../ai/model";
 import { adjudicateMatchPrompt, matchAdjudicationSchema } from "../ai/prompts/adjudicate-match.v1";
+import { sameInvoicePrompt, sameInvoiceSchema } from "../ai/prompts/same-invoice.v1";
 import { currencyFor } from "../money/currencies";
 import { formatAmount } from "../money/format";
-import type { AdjudicateMatch, CandidateBrief, InvoiceBrief } from "./contracts";
+import type {
+  AdjudicateMatch,
+  CandidateBrief,
+  DuplicateBrief,
+  InvoiceBrief,
+  JudgeSameInvoice,
+} from "./contracts";
 
 export const adjudicateMatch: AdjudicateMatch = async ({ invoice, candidates }) =>
   inferStructure({
@@ -59,4 +66,37 @@ function describe(candidate: CandidateBrief): string {
     `   ${candidate.amount} on ${candidate.valueDate}`,
     ...candidate.evidence.map((line) => `   - ${line}`),
   ].join("\n");
+}
+
+/**
+ * Whether two invoices are the same underlying document.
+ *
+ * Its own call, with its own prompt. `contracts.ts` says why they are not one question.
+ */
+export const judgeSameInvoice: JudgeSameInvoice = async ({ existing, incoming }) =>
+  inferStructure({
+    prompt: sameInvoicePrompt,
+    schema: sameInvoiceSchema,
+    content: [{ type: "text", text: renderPair(existing, incoming) }],
+  });
+
+function renderPair(existing: DuplicateBrief, incoming: DuplicateBrief): string {
+  return [
+    "## Already on file",
+    "",
+    ...describeInvoice(existing),
+    "",
+    "## Just arrived",
+    "",
+    ...describeInvoice(incoming),
+  ].join("\n");
+}
+
+function describeInvoice(invoice: DuplicateBrief): string[] {
+  return [
+    `Vendor: ${invoice.vendor ?? "not read from the document"}`,
+    `Number: ${invoice.invoiceNumber ?? "none on the document"}`,
+    `Dated: ${invoice.invoiceDate ?? "not read from the document"}`,
+    `Total: ${invoice.amount ?? "not read from the document"}`,
+  ];
 }

@@ -11,6 +11,7 @@
 
 import type { Inference } from "../ai/model";
 import type { MatchAdjudication } from "../ai/prompts/adjudicate-match.v1";
+import type { SameInvoiceJudgement } from "../ai/prompts/same-invoice.v1";
 import type { Evidence } from "./evidence";
 
 /**
@@ -55,6 +56,27 @@ export type AdjudicateMatch = (request: {
   invoice: InvoiceBrief;
   candidates: CandidateBrief[];
 }) => Promise<Inference<MatchAdjudication>>;
+
+/** One invoice, as the model is shown it when asked whether two are the same document. */
+export interface DuplicateBrief {
+  readonly vendor: string | null;
+  readonly invoiceNumber: string | null;
+  readonly invoiceDate: string | null;
+  readonly amount: string | null;
+}
+
+/**
+ * Ask whether two invoices are the same underlying document.
+ *
+ * A separate call from adjudication rather than a second question inside it. The two
+ * decide different things and fail in different directions -- a missed duplicate is a
+ * silent second invoice, a wrong match is a document on the wrong payment -- and
+ * `docs/matching-acceptance.md` counts them in separate columns for that reason.
+ */
+export type JudgeSameInvoice = (request: {
+  existing: DuplicateBrief;
+  incoming: DuplicateBrief;
+}) => Promise<Inference<SameInvoiceJudgement>>;
 
 /** Turn stored evidence into the lines the model is shown. */
 export type RenderEvidence = (evidence: readonly Evidence[]) => string[];
