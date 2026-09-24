@@ -194,6 +194,7 @@ describe("proposing candidates across a boundary", () => {
 
     const { candidates } = await generateCandidates(attacker, {
       id: invoice.id,
+      documentId: null,
       invoiceNumber: "INV-92831",
       invoiceDate: "2026-04-14",
       totalMinor: 2000n,

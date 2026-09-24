@@ -37,7 +37,7 @@
 
 import { and, eq, gte, inArray, lte, ne } from "drizzle-orm";
 
-import { canonicalTransactions, invoices, vendorAliases } from "../db/schema";
+import { canonicalTransactions, invoiceRequirements, invoices, vendorAliases } from "../db/schema";
 import type { WorkspaceScope } from "../db/workspace-scope";
 import {
   evidenceFor,
@@ -168,6 +168,46 @@ async function alreadyInvoiced(
 }
 
 /**
+ * Which of these transactions the user has already said this document is not for.
+ *
+ * `invoice-match-review.md §7`: rejecting every candidate records the rejection "so that a
+ * later run does not present them again", and "rejection is evidence -- it should never be
+ * discarded, and it should never be treated as the user having taken no action."
+ *
+ * The rejection lives on the requirement rather than on the candidate row, and that is the
+ * only place it could live: `recordCandidates` deletes and re-inserts the whole candidate
+ * set on every run, so a flag there would be destroyed by the next match.
+ *
+ * Suppression is per pair, not per transaction. A user saying "this receipt is not for that
+ * payment" has said nothing about any other document, and a transaction that rejected one
+ * document is still a perfectly good candidate for the next one.
+ *
+ * One bounded read keyed on the ids just fetched, the same shape as `alreadyInvoiced`.
+ */
+async function rejectedFor(
+  scope: WorkspaceScope,
+  transactionIds: string[],
+  documentId: string | null,
+): Promise<Set<string>> {
+  if (documentId === null || transactionIds.length === 0) return new Set();
+
+  const rows = await scope.select(
+    invoiceRequirements,
+    inArray(invoiceRequirements.canonicalTransactionId, transactionIds),
+  );
+
+  const rejected = new Set<string>();
+  for (const row of rows) {
+    // jsonb, so what comes back is whatever was written. A column holding something
+    // unexpected must not throw while someone is waiting for a shortlist.
+    const ids = Array.isArray(row.rejectedDocumentIds) ? row.rejectedDocumentIds : [];
+    if (ids.includes(documentId)) rejected.add(row.canonicalTransactionId);
+  }
+
+  return rejected;
+}
+
+/**
  * Propose the transactions this invoice might have paid for.
  *
  * Returns an empty set rather than throwing when the invoice carries no date: the window
@@ -177,7 +217,7 @@ async function alreadyInvoiced(
  */
 export async function generateCandidates(
   scope: WorkspaceScope,
-  invoice: InvoiceFacts & { id: string },
+  invoice: InvoiceFacts & { id: string; documentId: string | null },
 ): Promise<CandidateSet> {
   if (invoice.invoiceDate === null) return EMPTY;
 
@@ -200,11 +240,9 @@ export async function generateCandidates(
   const truncated = rows.length === CANDIDATE_FETCH_CAP;
   if (rows.length === 0) return EMPTY;
 
-  const taken = await alreadyInvoiced(
-    scope,
-    rows.map((row) => row.id),
-    invoice.id,
-  );
+  const transactionIds = rows.map((row) => row.id);
+  const taken = await alreadyInvoiced(scope, transactionIds, invoice.id);
+  const rejected = await rejectedFor(scope, transactionIds, invoice.documentId);
   const aliases = await knownAliases(scope, invoice.vendorId);
   const aliasKeys = aliases.map((alias) => alias.aliasNormalized);
   const confirmed = new Set(
@@ -215,6 +253,8 @@ export async function generateCandidates(
 
   for (const row of rows) {
     if (taken.has(row.id)) continue;
+    // The user has seen this document against this payment and said no. §7.
+    if (rejected.has(row.id)) continue;
 
     const transaction: TransactionFacts = {
       id: row.id,

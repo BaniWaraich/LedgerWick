@@ -256,7 +256,7 @@ export async function matchInvoice(
 
   if (duplicate !== null) await flagDuplicate(scope, invoiceId, duplicate);
 
-  const { candidates, truncated } = await generateCandidates(scope, facts);
+  const { candidates, truncated } = await generateCandidates(scope, { ...facts, documentId });
 
   /*
    * The one requirement this run is entitled to move.

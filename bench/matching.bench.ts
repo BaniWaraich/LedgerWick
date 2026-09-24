@@ -65,7 +65,7 @@ import {
 import { generateCandidates } from "../src/matching/candidates";
 import { AUTO_MATCH_TERMS, decideOutcome } from "../src/matching/decide";
 import { describeAll, type InvoiceFacts } from "../src/matching/evidence";
-import { invoices, vendorAliases, vendors } from "../src/db/schema";
+import { invoiceDocuments, invoices, vendorAliases, vendors } from "../src/db/schema";
 import { WorkspaceScope } from "../src/db/workspace-scope";
 import { vendorLookupKeys } from "../src/documents/vendors";
 import { currencyFor } from "../src/money/currencies";
@@ -201,8 +201,14 @@ describe("matching real invoices against real transactions", () => {
           ? []
           : await scope.select(vendorAliases, eq(vendorAliases.vendorId, invoice.vendorId));
 
-      const facts: InvoiceFacts & { id: string } = {
+      const [primaryDocument] = await scope.select(
+        invoiceDocuments,
+        eq(invoiceDocuments.invoiceId, invoice.id),
+      );
+
+      const facts: InvoiceFacts & { id: string; documentId: string | null } = {
         id: invoice.id,
+        documentId: primaryDocument?.documentId ?? null,
         invoiceNumber: invoice.invoiceNumber,
         invoiceDate: invoice.invoiceDate,
         totalMinor: invoice.totalMinor,

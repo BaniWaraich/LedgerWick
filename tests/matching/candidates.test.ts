@@ -11,7 +11,14 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createTestDb, seedBankAccount, seedWorkspace, type TestDb } from "../helpers/db";
-import { canonicalTransactions, invoices, vendorAliases, vendors } from "../../src/db/schema";
+import {
+  canonicalTransactions,
+  invoiceRequirements,
+  invoices,
+  supportingDocuments,
+  vendorAliases,
+  vendors,
+} from "../../src/db/schema";
 import { WorkspaceScope } from "../../src/db/workspace-scope";
 import { generateCandidates } from "../../src/matching/candidates";
 import { CANDIDATE_FETCH_CAP, CANDIDATES_SHOWN_TO_MODEL } from "../../src/matching/thresholds";
@@ -61,9 +68,13 @@ async function insertInvoice(overrides: Record<string, unknown> = {}) {
   return row;
 }
 
-function facts(id: string, overrides: Partial<InvoiceFacts> = {}): InvoiceFacts & { id: string } {
+function facts(
+  id: string,
+  overrides: Partial<InvoiceFacts> & { documentId?: string | null } = {},
+): InvoiceFacts & { id: string; documentId: string | null } {
   return {
     id,
+    documentId: null,
     invoiceNumber: "INV-92831",
     invoiceDate: "2026-04-14",
     totalMinor: 2000n,
@@ -288,5 +299,150 @@ describe("how the vendor was recognised", () => {
     expect(vendorEvidence?.kind === "VENDOR" && vendorEvidence.agreement).toBe(
       "NORMALIZED_CONTAINS",
     );
+  });
+});
+
+describe("a payment the user has already said this document is not for", () => {
+  /**
+   * spec: docs/workflows/invoice-match-review.md §7
+   *
+   * "The rejected candidates are recorded so that a later run does not present them
+   * again. Rejection is evidence. It should never be discarded, and it should never be
+   * treated as the user having taken no action."
+   */
+  async function insertDocument() {
+    const [row] = await h.db
+      .insert(supportingDocuments)
+      .values({
+        workspaceId,
+        storageRef: "documents/x.pdf",
+        filename: "invoice.pdf",
+        mimeType: "application/pdf",
+        source: "MANUAL_UPLOAD",
+        state: "EXTRACTED",
+      })
+      .returning();
+    return row;
+  }
+
+  async function rejectOn(transactionId: string, documentIds: string[]) {
+    await h.db.insert(invoiceRequirements).values({
+      workspaceId,
+      canonicalTransactionId: transactionId,
+      state: "NOT_FOUND",
+      rejectedDocumentIds: documentIds,
+    });
+  }
+
+  it("is not proposed again", async () => {
+    const txn = await insertTransaction();
+    const document = await insertDocument();
+    const invoice = await insertInvoice();
+    await rejectOn(txn.id, [document.id]);
+
+    const { candidates } = await generateCandidates(
+      scope,
+      facts(invoice.id, { documentId: document.id }),
+    );
+
+    expect(candidates).toHaveLength(0);
+  });
+
+  it("is still proposed for a different document", async () => {
+    // The user said nothing about the next receipt that turns up.
+    const txn = await insertTransaction();
+    const rejected = await insertDocument();
+    const another = await insertDocument();
+    const invoice = await insertInvoice();
+    await rejectOn(txn.id, [rejected.id]);
+
+    const { candidates } = await generateCandidates(
+      scope,
+      facts(invoice.id, { documentId: another.id }),
+    );
+
+    expect(candidates.map((c) => c.transaction.id)).toEqual([txn.id]);
+  });
+
+  it("does not suppress that document against other payments", async () => {
+    // Suppression is per pair. A document rejected for one payment may well be the
+    // right document for the payment beside it.
+    const rejectedOn = await insertTransaction({ occurrenceIndex: 0 });
+    const untouched = await insertTransaction({ occurrenceIndex: 1 });
+    const document = await insertDocument();
+    const invoice = await insertInvoice();
+    await rejectOn(rejectedOn.id, [document.id]);
+
+    const { candidates } = await generateCandidates(
+      scope,
+      facts(invoice.id, { documentId: document.id }),
+    );
+
+    expect(candidates.map((c) => c.transaction.id)).toEqual([untouched.id]);
+  });
+
+  it("ignores a rejection that names some other document", async () => {
+    const txn = await insertTransaction();
+    const mine = await insertDocument();
+    const stranger = await insertDocument();
+    const invoice = await insertInvoice();
+    await rejectOn(txn.id, [stranger.id]);
+
+    const { candidates } = await generateCandidates(
+      scope,
+      facts(invoice.id, { documentId: mine.id }),
+    );
+
+    expect(candidates).toHaveLength(1);
+  });
+
+  it("proposes normally for an invoice with no document behind it", async () => {
+    const txn = await insertTransaction();
+    const document = await insertDocument();
+    const invoice = await insertInvoice();
+    await rejectOn(txn.id, [document.id]);
+
+    // documentId null: there is nothing a rejection could name.
+    const { candidates } = await generateCandidates(scope, facts(invoice.id));
+
+    expect(candidates).toHaveLength(1);
+  });
+
+  it("does not break on a column holding something unexpected", async () => {
+    // jsonb takes whatever was written. A row from before this shape existed, or written
+    // by hand, must not throw while someone is waiting for a shortlist.
+    const txn = await insertTransaction();
+    const document = await insertDocument();
+    const invoice = await insertInvoice();
+    await h.db.insert(invoiceRequirements).values({
+      workspaceId,
+      canonicalTransactionId: txn.id,
+      rejectedDocumentIds: { not: "an array" },
+    });
+
+    const { candidates } = await generateCandidates(
+      scope,
+      facts(invoice.id, { documentId: document.id }),
+    );
+
+    expect(candidates).toHaveLength(1);
+  });
+
+  it("renumbers the ranks it does propose", async () => {
+    // Rejecting the best candidate promotes the next. A gap in the ranks would mean the
+    // review screen's order stopped being 0, 1, 2.
+    const rejectedOn = await insertTransaction({ occurrenceIndex: 0, amountMinor: 2000n });
+    const second = await insertTransaction({ occurrenceIndex: 1, amountMinor: 2015n });
+    const document = await insertDocument();
+    const invoice = await insertInvoice();
+    await rejectOn(rejectedOn.id, [document.id]);
+
+    const { candidates } = await generateCandidates(
+      scope,
+      facts(invoice.id, { documentId: document.id }),
+    );
+
+    expect(candidates.map((c) => c.rank)).toEqual([0]);
+    expect(candidates[0].transaction.id).toBe(second.id);
   });
 });

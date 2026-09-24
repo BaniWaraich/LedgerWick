@@ -455,3 +455,56 @@ describe("the requirements a run is entitled to touch", () => {
     expect(requirement.state).toBe("IDENTIFIED");
   });
 });
+
+describe("a rejection outliving the working-out that produced it", () => {
+  /**
+   * spec: docs/workflows/invoice-match-review.md §7
+   *
+   * This is the test that justifies where the rejection is stored. `recordCandidates`
+   * deletes and re-inserts the whole candidate set on every run, so a flag on the
+   * candidate row would be destroyed by the next match and the user would be asked the
+   * same question again. On the requirement, it survives.
+   */
+  it("is still honoured after the candidate set is rebuilt", async () => {
+    const txn = await insertTransaction();
+    await h.db.insert(invoiceRequirements).values({ workspaceId, canonicalTransactionId: txn.id });
+    const { invoice, document } = await insertInvoice();
+
+    const first = await matchInvoice(scope, invoice.id, deps(unsure));
+    expect(first.candidates).toBe(1);
+    expect(await h.db.select().from(invoiceMatchCandidates)).toHaveLength(1);
+
+    // The user rejects it in review. The candidate row is left exactly where it was.
+    await h.db
+      .update(invoiceRequirements)
+      .set({ state: "NOT_FOUND", rejectedDocumentIds: [document.id] })
+      .where(eq(invoiceRequirements.canonicalTransactionId, txn.id));
+
+    const second = await matchInvoice(scope, invoice.id, deps(unsure));
+
+    expect(second.candidates).toBe(0);
+    expect(second.outcome).toBe("NOT_FOUND");
+    // The rebuilt set is empty, and the old row is gone with it -- which is exactly why
+    // the rejection could not have lived there.
+    expect(await h.db.select().from(invoiceMatchCandidates)).toHaveLength(0);
+  });
+
+  it("leaves the requirement where the user put it", async () => {
+    // The run proposes nothing, so it moves nothing. A requirement the user returned to
+    // the queue stays in the queue.
+    const txn = await insertTransaction();
+    await h.db.insert(invoiceRequirements).values({ workspaceId, canonicalTransactionId: txn.id });
+    const { invoice, document } = await insertInvoice();
+
+    await matchInvoice(scope, invoice.id, deps(unsure));
+    await h.db
+      .update(invoiceRequirements)
+      .set({ state: "NOT_FOUND", rejectedDocumentIds: [document.id] })
+      .where(eq(invoiceRequirements.canonicalTransactionId, txn.id));
+
+    await matchInvoice(scope, invoice.id, deps(unsure));
+
+    const [requirement] = await h.db.select().from(invoiceRequirements);
+    expect(requirement.state).toBe("NOT_FOUND");
+  });
+});
