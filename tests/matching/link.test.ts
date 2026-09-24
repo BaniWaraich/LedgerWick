@@ -22,7 +22,7 @@ import {
   supportingDocuments,
 } from "../../src/db/schema";
 import { WorkspaceScope } from "../../src/db/workspace-scope";
-import { linkDocument, linkInvoice } from "../../src/matching/link";
+import { linkDocument, linkInvoice, resolveWithoutDocument } from "../../src/matching/link";
 
 let h: TestDb;
 let scope: WorkspaceScope;
@@ -285,5 +285,82 @@ describe("reaching for something that is not yours", () => {
 
     const [untouched] = await h.db.select().from(invoices).where(eq(invoices.id, invoice.id));
     expect(untouched.canonicalTransactionId).toBeNull();
+  });
+});
+
+describe("a payment that needs no document at all", () => {
+  // spec: docs/workflows/invoice-match-review.md §6 · docs/state-machines.md §2
+  //
+  // The one resolution with nothing to link. §6 calls it "the single most valuable answer
+  // the user can give, because it is the one that stops the system asking again".
+  it("resolves the requirement and links nothing", async () => {
+    const txn = await insertTransaction();
+    await insertRequirement(txn.id);
+
+    const outcome = await resolveWithoutDocument(scope, txn.id);
+
+    expect(outcome).toEqual({ resolved: true });
+
+    const [requirement] = await h.db.select().from(invoiceRequirements);
+    expect(requirement.state).toBe("RESOLVED");
+    expect(requirement.resolutionMethod).toBe("NOT_REQUIRED");
+    // The only resolution that leaves this null, and deliberately so.
+    expect(requirement.resolvedDocumentId).toBeNull();
+  });
+
+  it("creates no invoice and touches no document", async () => {
+    const txn = await insertTransaction();
+    await insertRequirement(txn.id);
+
+    await resolveWithoutDocument(scope, txn.id);
+
+    expect(await h.db.select().from(invoices)).toHaveLength(0);
+    expect(await h.db.select().from(supportingDocuments)).toHaveLength(0);
+  });
+
+  it("will not overwrite a method a machine already chose", async () => {
+    // The isNull(resolutionMethod) guard, from the other direction. A settled requirement
+    // is settled whoever settled it.
+    const txn = await insertTransaction();
+    const { invoice } = await insertInvoice();
+    await insertRequirement(txn.id);
+    await linkInvoice(scope, invoice.id, txn.id, "AUTO_MATCHED");
+
+    const outcome = await resolveWithoutDocument(scope, txn.id);
+
+    expect(outcome).toEqual({ resolved: false });
+    const [requirement] = await h.db.select().from(invoiceRequirements);
+    expect(requirement.resolutionMethod).toBe("AUTO_MATCHED");
+  });
+
+  it("is harmless the second time", async () => {
+    // A double-submitted form, a back button, two tabs. Nothing to fix and nothing to
+    // apologize for.
+    const txn = await insertTransaction();
+    await insertRequirement(txn.id);
+
+    expect(await resolveWithoutDocument(scope, txn.id)).toEqual({ resolved: true });
+    expect(await resolveWithoutDocument(scope, txn.id)).toEqual({ resolved: false });
+    expect(await h.db.select().from(invoiceRequirements)).toHaveLength(1);
+  });
+
+  it("resolves nothing for a payment that was never flagged", async () => {
+    // §14: a transaction the system never asked about has no requirement, so there is
+    // nothing to resolve and nothing was missing.
+    const txn = await insertTransaction();
+
+    expect(await resolveWithoutDocument(scope, txn.id)).toEqual({ resolved: false });
+  });
+
+  it("resolves nothing in another workspace", async () => {
+    const other = await seedWorkspace(h.db, "Attacker Business");
+    const attacker = new WorkspaceScope(h.db, other.workspace.id, other.user.id);
+    const txn = await insertTransaction();
+    await insertRequirement(txn.id);
+
+    expect(await resolveWithoutDocument(attacker, txn.id)).toEqual({ resolved: false });
+
+    const [requirement] = await h.db.select().from(invoiceRequirements);
+    expect(requirement.state).toBe("IDENTIFIED");
   });
 });

@@ -1,16 +1,31 @@
 /**
- * Attaching a document to the payment it is evidence of.
+ * Settling what a payment owes, and attaching the document that settles it.
  *
- * spec: docs/workflows/manual-invoice-upload.md §12, §14 · docs/domain-model.md §5.1,
+ * spec: docs/workflows/manual-invoice-upload.md §12, §14 ·
+ * docs/workflows/invoice-match-review.md §6 · docs/domain-model.md §5.1,
  * invariants 8, 9 and 17
  *
  * ## Why every path comes through here
  *
- * An automatic match, a user choosing a candidate, a user linking by hand, and a document
- * uploaded already bound to a transaction all end in the same three writes: the link, the
- * requirement resolved, the method recorded. Four implementations of that would be four
- * places for the invariant to be checked slightly differently, and the one that got it
- * wrong would be whichever was written last.
+ * An automatic match, a user choosing a candidate, a user linking by hand, a document
+ * uploaded already bound to a transaction, and a user saying no document is needed at all
+ * end in the same writes: the link where there is one, the requirement resolved, the
+ * method recorded. Five implementations of that would be five places for the invariant to
+ * be checked slightly differently, and the one that got it wrong would be whichever was
+ * written last.
+ *
+ * **Every write to `invoice_requirements.resolution_method` happens in this file.** That
+ * is the rule, and the `isNull(resolutionMethod)` guard below is what it buys: one place
+ * where a machine cannot overwrite a decision a person made, and a person cannot silently
+ * restate one a machine made.
+ *
+ * ## The one resolution with no document
+ *
+ * `invoice-match-review.md §6`: "No document is needed" is a legitimate resolution and
+ * "the single most valuable answer the user can give, because it is the one that stops the
+ * system asking again." It cannot use either entry point below, since both require a
+ * document to link, so it gets `resolveWithoutDocument` -- deliberately the only function
+ * here that resolves a requirement while leaving `resolved_document_id` null.
  *
  * ## The invariant is the index, not a check here
  *
@@ -37,7 +52,13 @@ import { isUniqueViolation } from "../db/errors";
 import { invoiceDocuments, invoiceRequirements, invoices, supportingDocuments } from "../db/schema";
 import type { WorkspaceScope } from "../db/workspace-scope";
 
-/** How a link came to be. Matches `resolution_method` in docs/state-machines.md §2. */
+/**
+ * How a link came to be. Matches `resolution_method` in docs/state-machines.md §2.
+ *
+ * `NOT_REQUIRED` is deliberately absent: it is not a way a link came to be, because there
+ * is no link. `resolveWithoutDocument` writes it and takes no method argument.
+ * `AUTO_RETRIEVED` arrives with feature K.
+ */
 export type LinkMethod = "AUTO_MATCHED" | "USER_CONFIRMED" | "USER_LINKED";
 
 export type LinkOutcome =
@@ -65,8 +86,8 @@ export type LinkOutcome =
 async function resolveRequirement(
   scope: WorkspaceScope,
   transactionId: string,
-  documentId: string,
-  method: LinkMethod,
+  documentId: string | null,
+  method: LinkMethod | "NOT_REQUIRED",
 ): Promise<boolean> {
   const updated = await scope.update(
     invoiceRequirements,
@@ -181,4 +202,27 @@ export async function linkDocument(
   const resolved = await resolveRequirement(scope, transactionId, documentId, method);
 
   return { linked: true, requirementResolved: resolved };
+}
+
+/**
+ * Record that this payment needs no supporting document.
+ *
+ * `invoice-match-review.md §6`, and `identifying-invoices.md §5 Step 6` names the cases:
+ * a transfer between the business's own accounts, a bank fee, a personal payment. The
+ * requirement is resolved and nothing is linked, because there is nothing to link.
+ *
+ * Returns whether anything moved. `false` means the requirement was already resolved, does
+ * not exist, or is not this workspace's -- all of which are the same answer to the caller,
+ * and all of which are ordinary rather than exceptional. A user pressing the button twice
+ * is the common case.
+ *
+ * What the user's decision *teaches* is not written here. `src/review/resolve.ts` owns
+ * that, because how widely it generalizes is a question this function has no way to ask.
+ */
+export async function resolveWithoutDocument(
+  scope: WorkspaceScope,
+  transactionId: string,
+): Promise<{ resolved: boolean }> {
+  const resolved = await resolveRequirement(scope, transactionId, null, "NOT_REQUIRED");
+  return { resolved };
 }
