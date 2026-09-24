@@ -476,6 +476,17 @@ authorized route. Rejecting every candidate returns the requirement to `NOT_FOUN
 rejections so a later run does not re-offer them. Leaving without deciding loses nothing. The
 system does not over-generalize from one confirmation.
 
+**Met.** `docs/decisions/0012` records how. Two clauses need reading precisely rather than
+ticking. "All five resolution methods" means review *produces* `USER_CONFIRMED`,
+`USER_LINKED` and `NOT_REQUIRED`; `AUTO_MATCHED` is feature G's and `AUTO_RETRIEVED`
+arrives with K, and neither is reachable from this screen by design. And `§4`'s "what the
+system did" is thin on purpose — nothing records a search until J and K exist, so the
+screen says no mailbox is connected rather than inventing a window.
+
+One thing H creates that feature I must settle: a `NOT_REQUIRED` requirement is `RESOLVED`
+but was never *matched*, so `missing-invoice-report.md §5`'s three-way sum would count it
+as matched. The discriminator is persisted; the decision is I's.
+
 ---
 
 ### I. Missing Invoice Report
