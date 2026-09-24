@@ -136,6 +136,32 @@ function primaryDocuments(
 }
 
 /**
+ * The primary document of every candidate currently proposed for this payment.
+ *
+ * Shared with `resolve.ts` so that what the screen showed and what a rejection records can
+ * never drift apart: "none of these is right" has to mean the set the user was looking at.
+ */
+export async function candidateDocumentIds(
+  scope: WorkspaceScope,
+  transactionId: string,
+): Promise<string[]> {
+  const rows = await scope.select(
+    invoiceMatchCandidates,
+    eq(invoiceMatchCandidates.canonicalTransactionId, transactionId),
+  );
+
+  const invoiceIds = [...new Set(rows.map((row) => row.invoiceId))];
+  if (invoiceIds.length === 0) return [];
+
+  const joins = await scope.select(
+    invoiceDocuments,
+    inArray(invoiceDocuments.invoiceId, invoiceIds),
+  );
+
+  return [...new Set(primaryDocuments(joins).values())];
+}
+
+/**
  * Assemble one requirement's review.
  *
  * Returns null for a requirement that does not exist and for one belonging to another
