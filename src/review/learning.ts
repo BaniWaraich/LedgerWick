@@ -41,7 +41,7 @@
 
 import { and, eq } from "drizzle-orm";
 
-import { vendorAliases } from "../db/schema";
+import { vendorAliases, vendors } from "../db/schema";
 import type { WorkspaceScope } from "../db/workspace-scope";
 import { normalizeVendorName } from "../documents/vendors";
 
@@ -64,6 +64,21 @@ export async function confirmVendorAlias(
 
   const key = normalizeVendorName(transactionDescription);
   if (key === "") return { learned: false };
+
+  /*
+   * The vendor is an id this function was handed, so it is checked rather than trusted.
+   *
+   * `scope.insert` injects the workspace on the alias row, which keeps the row itself
+   * inside the caller's workspace -- and would still let a caller holding another
+   * workspace's vendor id write an alias in their own workspace pointing across the
+   * boundary. Found by `tests/review/isolation.test.ts` attacking exactly that.
+   *
+   * In the real flow the id comes from an invoice loaded through this same scope, so this
+   * is never reached. Which is the argument for checking: the guarantee should not depend
+   * on every future caller having been careful.
+   */
+  const vendor = await scope.selectOne(vendors, eq(vendors.id, vendorId));
+  if (vendor === null) return { learned: false };
 
   const [existing] = await scope.select(vendorAliases, eq(vendorAliases.aliasNormalized, key));
 
