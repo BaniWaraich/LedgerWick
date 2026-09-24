@@ -53,6 +53,7 @@ import {
 } from "../db/schema";
 import type { WorkspaceScope } from "../db/workspace-scope";
 import { describeAll, fromStored } from "../matching/evidence";
+import { compareInvoices, type DuplicateComparison } from "./duplicates";
 
 /** One document proposed for this payment, with the case for it. */
 export interface ReviewCandidate {
@@ -107,6 +108,8 @@ export interface ReviewContext {
   };
   readonly whatWeDid: WhatWeDid;
   readonly candidates: ReviewCandidate[];
+  /** §8: a different question, asked above the candidates when it applies. */
+  readonly duplicate: DuplicateComparison | null;
 }
 
 /** The rejected document ids on a requirement, whatever the column actually holds. */
@@ -295,6 +298,59 @@ export async function reviewContext(
     });
   }
 
+  /*
+   * §8: "not 'which transaction', but 'are these the same invoice'."
+   *
+   * Only one candidate can be flagged, because an invoice is flagged against the one it
+   * resembles. Taking the first keeps the panel a single question.
+   */
+  const flagged = proposed.find((invoice) => invoice.suspectedDuplicateOfInvoiceId !== null);
+  const original =
+    flagged?.suspectedDuplicateOfInvoiceId == null
+      ? null
+      : await scope.selectOne(invoices, eq(invoices.id, flagged.suspectedDuplicateOfInvoiceId));
+
+  const originalJoins =
+    original === null
+      ? []
+      : await scope.select(invoiceDocuments, eq(invoiceDocuments.invoiceId, original.id));
+
+  const originalVendor =
+    original?.vendorId == null
+      ? null
+      : (vendorById.get(original.vendorId) ??
+        (await scope.selectOne(vendors, eq(vendors.id, original.vendorId))));
+
+  const money = (minor: bigint | null, code: string | null) =>
+    minor === null ? null : `${code ?? "?"} ${minor}`;
+
+  const duplicate: DuplicateComparison | null =
+    flagged === undefined || original === null
+      ? null
+      : {
+          existingInvoiceId: original.id,
+          incomingInvoiceId: flagged.id,
+          existingDocumentId: [...primaryDocuments(originalJoins).values()][0] ?? null,
+          incomingDocumentId: documentByInvoice.get(flagged.id) ?? null,
+          reason: flagged.duplicateReason,
+          fields: compareInvoices(
+            {
+              vendorName: originalVendor?.name ?? null,
+              invoiceNumber: original.invoiceNumber,
+              invoiceDate: original.invoiceDate,
+              amount: money(original.totalMinor, original.currency),
+            },
+            {
+              vendorName: flagged.vendorId
+                ? (vendorById.get(flagged.vendorId)?.name ?? null)
+                : null,
+              invoiceNumber: flagged.invoiceNumber,
+              invoiceDate: flagged.invoiceDate,
+              amount: money(flagged.totalMinor, flagged.currency),
+            },
+          ),
+        };
+
   return {
     requirement: {
       id: requirement.id,
@@ -316,6 +372,7 @@ export async function reviewContext(
       description: transaction.description,
       account: account ? `${account.bankName} ${account.accountIdentifier}` : "Unknown account",
     },
+    duplicate,
     whatWeDid: {
       candidatesConsidered: rows.length,
       rejectedPreviously,

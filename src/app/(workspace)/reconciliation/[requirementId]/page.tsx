@@ -39,6 +39,7 @@ import { currencyFor } from "../../../../money/currencies";
 import { formatAmount } from "../../../../money/format";
 import { linkableDocuments, reviewContext } from "../../../../review/context";
 import { DecisionForm } from "./decision-form";
+import { DuplicatePanel } from "./duplicate-panel";
 import styles from "./page.module.css";
 
 /**
@@ -67,7 +68,7 @@ export default async function ReviewPage({
   // Another workspace's requirement and one that never existed are the same answer.
   if (context === null) notFound();
 
-  const { requirement, transaction, whatWeDid, candidates } = context;
+  const { requirement, transaction, whatWeDid, candidates, duplicate } = context;
   const linkable = requirement.isResolved ? [] : await linkableDocuments(scope);
 
   return (
@@ -137,6 +138,11 @@ export default async function ReviewPage({
           </li>
         </ul>
       </section>
+
+      {/* §8: a different question, and answering it changes what the candidates mean. */}
+      {duplicate && !requirement.isResolved ? (
+        <DuplicatePanel requirementId={requirement.id} duplicate={duplicate} />
+      ) : null}
 
       {requirement.isResolved ? (
         <section className={styles.card}>

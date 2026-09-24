@@ -130,7 +130,7 @@ export default async function DocumentPage({
             {invoice.duplicateReason ?? "It closely resembles an invoice already on file."}
           </p>
           <p className={styles.body}>
-            Both documents are kept. You can compare them and decide in your review queue.
+            Both documents are kept. You can compare them side by side and decide.
           </p>
           <Link className={styles.action} href="/reconciliation">
             Go to review

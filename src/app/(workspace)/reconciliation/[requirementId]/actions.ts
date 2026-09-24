@@ -22,6 +22,8 @@
 import { revalidatePath } from "next/cache";
 
 import { requireScope } from "../../../../auth/workspace";
+import { inngest, invoiceExtracted } from "../../../../inngest/client";
+import { keepBoth, keepOne } from "../../../../review/duplicates";
 import {
   confirmCandidate,
   linkExistingDocument,
@@ -39,6 +41,8 @@ const DECISIONS = [
   "REJECT_ALL",
   "NOT_REQUIRED_PAYMENT",
   "NOT_REQUIRED_VENDOR",
+  "SAME_INVOICE",
+  "DIFFERENT_INVOICES",
 ] as const;
 
 type Decision = (typeof DECISIONS)[number];
@@ -82,6 +86,41 @@ export async function resolveRequirementAction(
     case "NOT_REQUIRED_VENDOR":
       outcome = await markNotRequired(scope, requirementId, "THIS_VENDOR");
       break;
+    case "SAME_INVOICE": {
+      const invoiceId = String(formData.get("duplicateInvoiceId") ?? "");
+      const primaryDocumentId = String(formData.get("primaryDocumentId") ?? "");
+      if (primaryDocumentId === "") return { error: "Choose which copy to keep as the main one." };
+
+      const merged = await keepOne(scope, invoiceId, primaryDocumentId);
+      outcome = merged.merged ? { resolved: true } : { resolved: false, reason: merged.reason };
+      break;
+    }
+    case "DIFFERENT_INVOICES": {
+      const invoiceId = String(formData.get("duplicateInvoiceId") ?? "");
+      const separated = await keepBoth(scope, invoiceId);
+
+      /*
+       * §8: "a separate Invoice is created and matched independently."
+       *
+       * The invoice already exists, so what independently means is a real re-run.
+       * `decide.ts` suppressed the automatic link on the duplicate flag alone, so clearing
+       * the flag without matching again would leave it permanently unmatched.
+       */
+      if (separated.merged) {
+        await inngest.send(
+          invoiceExtracted.create({
+            invoiceId,
+            workspaceId: scope.workspaceId,
+            userId: scope.userId,
+          }),
+        );
+      }
+
+      outcome = separated.merged
+        ? { resolved: true }
+        : { resolved: false, reason: separated.reason };
+      break;
+    }
   }
 
   if (!outcome.resolved) return { error: outcome.reason };
