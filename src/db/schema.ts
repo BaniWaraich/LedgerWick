@@ -628,7 +628,17 @@ export const invoiceMatchCandidates = pgTable(
   (t) => [
     // One proposal per pair. A re-run replaces the set; it must not double it.
     uniqueIndex("invoice_match_candidates_identity_idx").on(t.invoiceId, t.canonicalTransactionId),
+    // Matching's own direction: what did we propose for this invoice.
     index("invoice_match_candidates_invoice_idx").on(t.workspaceId, t.invoiceId),
+    /*
+     * Review's direction: what was proposed for this payment.
+     *
+     * Match review enters by requirement -- a transaction -- and asks which documents
+     * named it. The unique index above leads with `invoice_id`, so it cannot answer that
+     * without a scan, and the review screen is the one place in the product a person is
+     * waiting on the answer.
+     */
+    index("invoice_match_candidates_transaction_idx").on(t.workspaceId, t.canonicalTransactionId),
   ],
 );
 
