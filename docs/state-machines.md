@@ -81,6 +81,12 @@ enumerated values from this document.
 
 ### User-facing messages
 
+`IDENTIFIED` reads "waiting for a document" rather than "waiting to search", because
+searching is one of two ways a document arrives and it is the one that does not exist yet.
+Until Gmail retrieval lands, a requirement in `IDENTIFIED` is waiting for the user to
+upload something, and telling them we are about to search a mailbox they have not
+connected would be a promise the system cannot keep.
+
 | Condition                   | Message                                       |
 | --------------------------- | --------------------------------------------- |
 | `UPLOADING`                 | Uploading your statement…                     |
@@ -154,9 +160,15 @@ resolves the requirement and teaches the system something; see Business Knowledg
 
 ### User-facing messages
 
+`IDENTIFIED` reads "waiting for a document" rather than "waiting to search", because
+searching is one of two ways a document arrives and it is the one that does not exist yet.
+Until Gmail retrieval lands, a requirement in `IDENTIFIED` is waiting for the user to
+upload something, and telling them we are about to search a mailbox they have not
+connected would be a promise the system cannot keep.
+
 | State          | Message                          |
 | -------------- | -------------------------------- |
-| `IDENTIFIED`   | Waiting to search…               |
+| `IDENTIFIED`   | Waiting for a document           |
 | `SEARCHING`    | Looking through your email…      |
 | `EVALUATING`   | Checking what we found…          |
 | `NEEDS_REVIEW` | Needs your review                |

@@ -51,6 +51,7 @@
 
 .item {
   display: flex;
+  align-items: center;
   gap: 1rem;
   padding: 1rem;
   background: var(--color-surface);
@@ -76,6 +77,31 @@
   flex-direction: column;
   gap: 0.125rem;
   min-width: 0;
+  /* Pushes the review chevron to the far edge of the row. */
+  flex: 1;
+}
+
+/* docs/state-machines.md §2's own words for where this requirement has got to. */
+.state {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+  color: var(--color-secondary);
+}
+
+.review {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--radius-full);
+  color: var(--color-primary);
+}
+
+.review:hover {
+  background: var(--color-surface-variant);
 }
 
 .vendor {
