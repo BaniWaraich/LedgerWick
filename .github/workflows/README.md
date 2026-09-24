@@ -85,6 +85,45 @@ connection string, set in the repository's Actions secrets. Neon's pooler is not
 for DDL. The job fails loudly when the secret is missing, because `drizzle-kit` with an
 empty URL is silent about connecting to nothing.
 
+## Preview migrations
+
+Preview has its own database, and it never holds production data
+(`docs/decisions/0013-preview-database-isolation.md`). Three Neon branches in the
+Vercel-managed project `ledgerwick-db`:
+
+| Branch    | Used by                    | Migrated by                                |
+| --------- | -------------------------- | ------------------------------------------ |
+| `main`    | Production                 | the `migrate` job above, and nothing else  |
+| `preview` | every Vercel Preview build | `scripts/migrate-preview.ts`, during build |
+| `local`   | `next dev`, `.env.local`   | `npm run db:migrate`                       |
+
+`npm run build` runs `scripts/migrate-preview.ts` before `next build`. It does nothing
+unless `VERCEL_ENV` is `preview`, so production, `verify`, and local builds are
+unaffected. On Preview it migrates `DATABASE_URL_UNPOOLED`, and **only** when that host
+equals `PREVIEW_DATABASE_HOST`. Anything else fails the build: Preview once resolved to
+production unnoticed, and a migration step must not be able to repeat that.
+
+### Rebuilding `preview`
+
+Every PR's Preview migrates the same branch. It drifts when a PR's migration is applied
+and the PR is then abandoned or its migration regenerated, or when two open PRs add
+migrations — drizzle skips any migration older than the newest one already applied, so
+the second is silently never run.
+
+When that happens, rebuild `preview` in place. The host does not change, so no Vercel
+variable changes:
+
+1. Confirm the target host is the Preview endpoint, never production.
+2. `DROP SCHEMA public CASCADE; CREATE SCHEMA public; DROP SCHEMA IF EXISTS drizzle CASCADE;`
+3. From a checkout of `origin/main`, run `drizzle-kit migrate` against the branch's
+   direct connection string.
+
+The next Preview build applies its PR's own migrations on top.
+
+`preview` is a schema-only branch, so it has no parent to reset from, and Neon's
+integration cannot give each Preview its own data-free branch. Both are why it is rebuilt
+by hand rather than reset.
+
 ## Branch protection
 
 Not configured by this repository. To make CI meaningful, require the `verify` and
