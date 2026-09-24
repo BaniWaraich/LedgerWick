@@ -162,6 +162,33 @@ export async function candidateDocumentIds(
 }
 
 /**
+ * Documents in this workspace that are not already attached to a payment.
+ *
+ * `§6`'s "link an existing document": used when an invoice was retrieved against the wrong
+ * transaction, or covers a payment the system did not connect it to. Anything already
+ * linked is excluded -- offering it would be offering a refusal.
+ */
+export async function linkableDocuments(scope: WorkspaceScope, limit = 50) {
+  const documents = await scope.select(supportingDocuments);
+  const linkedInvoices = await scope.select(invoices);
+
+  const spokenFor = new Set(
+    linkedInvoices
+      .filter((invoice) => invoice.canonicalTransactionId !== null)
+      .map((invoice) => invoice.id),
+  );
+  const joins = await scope.select(invoiceDocuments);
+  const attached = new Set(
+    joins.filter((join) => spokenFor.has(join.invoiceId)).map((join) => join.documentId),
+  );
+
+  return documents
+    .filter((document) => document.canonicalTransactionId === null && !attached.has(document.id))
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+    .slice(0, limit);
+}
+
+/**
  * Assemble one requirement's review.
  *
  * Returns null for a requirement that does not exist and for one belonging to another
