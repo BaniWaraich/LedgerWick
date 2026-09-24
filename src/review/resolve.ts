@@ -37,11 +37,17 @@
 
 import { eq } from "drizzle-orm";
 
-import { invoiceDocuments, invoiceRequirements } from "../db/schema";
+import {
+  canonicalTransactions,
+  invoiceDocuments,
+  invoiceRequirements,
+  invoices,
+} from "../db/schema";
 import type { WorkspaceScope } from "../db/workspace-scope";
 import { linkDocument, linkInvoice, resolveWithoutDocument } from "../matching/link";
 import { learn, normalizeVendor, VENDOR } from "../requirements/knowledge";
 import { candidateDocumentIds, rejectedDocuments } from "./context";
+import { confirmVendorAlias } from "./learning";
 
 /** What a decision did, or why it did nothing. */
 export type ResolveOutcome =
@@ -74,6 +80,10 @@ async function openRequirement(scope: WorkspaceScope, requirementId: string) {
  * The user chose one of the candidates the system proposed.
  *
  * `§5`: "Choosing a candidate resolves the requirement with method `USER_CONFIRMED`."
+ *
+ * And `§9`, row one: the alias is learned, confirmed. Only after the link succeeds -- a
+ * confirmation that lost the payment to a rival taught nothing, because the user's
+ * decision did not take effect.
  */
 export async function confirmCandidate(
   scope: WorkspaceScope,
@@ -90,7 +100,19 @@ export async function confirmCandidate(
     "USER_CONFIRMED",
   );
 
-  return linked.linked ? { resolved: true } : { resolved: false, reason: linked.reason };
+  if (!linked.linked) return { resolved: false, reason: linked.reason };
+
+  const invoice = await scope.selectOne(invoices, eq(invoices.id, invoiceId));
+  const transaction = await scope.selectOne(
+    canonicalTransactions,
+    eq(canonicalTransactions.id, requirement.canonicalTransactionId),
+  );
+
+  if (invoice !== null && transaction !== null) {
+    await confirmVendorAlias(scope, invoice.vendorId, transaction.description);
+  }
+
+  return { resolved: true };
 }
 
 /**
