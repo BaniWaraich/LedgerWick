@@ -81,6 +81,12 @@ enumerated values from this document.
 
 ### User-facing messages
 
+`IDENTIFIED` reads "waiting for a document" rather than "waiting to search", because
+searching is one of two ways a document arrives and it is the one that does not exist yet.
+Until Gmail retrieval lands, a requirement in `IDENTIFIED` is waiting for the user to
+upload something, and telling them we are about to search a mailbox they have not
+connected would be a promise the system cannot keep.
+
 | Condition                   | Message                                       |
 | --------------------------- | --------------------------------------------- |
 | `UPLOADING`                 | Uploading your statement…                     |
@@ -102,7 +108,7 @@ single state machine that the Missing Invoice Report reads.
 ```text
 IDENTIFIED
     ↓
-SEARCHING → EVALUATING
+SEARCHING → EVALUATING ←── a document is uploaded for this transaction
     ↓            ↓
     ↓        NEEDS_REVIEW ──→ RESOLVED
     ↓            ↓
@@ -111,13 +117,23 @@ SEARCHING → EVALUATING
   FAILED / BLOCKED
 ```
 
+**`EVALUATING` is reached from two directions**, and only one of them passes through
+`SEARCHING`. Gmail retrieval searches and then assesses what it found. A manual upload
+arrives with the document already in hand, so a requirement in `IDENTIFIED` goes straight
+to `EVALUATING` while its candidates are weighed — nothing was searched for, and claiming
+otherwise would put a requirement in `SEARCHING` when no mailbox was ever opened.
+
+A requirement may also be in `NOT_FOUND` when an upload arrives, having been looked for
+already and not found. It returns to `EVALUATING` for the same reason: there is now
+something to assess that there was not before.
+
 | State          | Terminal | Meaning                                                                                                     |
 | -------------- | -------- | ----------------------------------------------------------------------------------------------------------- |
-| `IDENTIFIED`   | no       | The system determined this transaction needs a supporting document. Retrieval has not started.              |
+| `IDENTIFIED`   | no       | The system determined this transaction needs a supporting document. Nothing has been searched for or offered for it yet. |
 | `SEARCHING`    | no       | Connected Gmail accounts are being searched.                                                                |
-| `EVALUATING`   | no       | Candidate documents have been found and are being assessed.                                                 |
+| `EVALUATING`   | no       | Candidates have been found and are being assessed — documents retrieved for this requirement, or transactions proposed for a document the user uploaded. |
 | `NEEDS_REVIEW` | no       | A plausible match exists but the evidence is insufficient to link automatically. Awaiting the user.         |
-| `NOT_FOUND`    | no       | Searching completed and no suitable supporting document was found. Awaiting the user.                       |
+| `NOT_FOUND`    | no       | Assessment completed and nothing suitable was established — no document was found for the transaction, or no transaction could be established for a document. Awaiting the user. |
 | `RESOLVED`     | yes      | A supporting document is linked to the transaction.                                                         |
 | `BLOCKED`      | no       | Progress is impossible until the user acts — most often expired Gmail authorization. Distinct from failure. |
 | `FAILED`       | no       | An internal or infrastructure error prevented processing. Retryable.                                        |
@@ -144,9 +160,15 @@ resolves the requirement and teaches the system something; see Business Knowledg
 
 ### User-facing messages
 
+`IDENTIFIED` reads "waiting for a document" rather than "waiting to search", because
+searching is one of two ways a document arrives and it is the one that does not exist yet.
+Until Gmail retrieval lands, a requirement in `IDENTIFIED` is waiting for the user to
+upload something, and telling them we are about to search a mailbox they have not
+connected would be a promise the system cannot keep.
+
 | State          | Message                          |
 | -------------- | -------------------------------- |
-| `IDENTIFIED`   | Waiting to search…               |
+| `IDENTIFIED`   | Waiting for a document           |
 | `SEARCHING`    | Looking through your email…      |
 | `EVALUATING`   | Checking what we found…          |
 | `NEEDS_REVIEW` | Needs your review                |

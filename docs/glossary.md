@@ -190,6 +190,42 @@ The link between an Invoice Requirement and the Supporting Document that satisfi
 together with how it was established: automatically, after user review, or by explicit
 manual linking.
 
+Where the Supporting Document was classified as an Invoice, the same Match is also the
+link between that Invoice and the Canonical Transaction — one relationship seen from two
+ends, not two relationships. A document that is not an Invoice links to the Canonical
+Transaction directly and satisfies the Requirement just the same
+(`docs/domain-model.md §5.1`).
+
+### Match Candidate
+
+A Canonical Transaction the system proposes as the possible subject of an Invoice,
+together with the evidence for it.
+
+A Candidate is a proposal, never a decision. It is produced deterministically, from a
+bounded set — the system does not ask a model to search the transactions — and it carries
+the observable facts that put it there: whether the amounts agree, how far apart the dates
+are, whether the vendor resolved, whether the invoice number appears in the transaction
+description. Those facts are what the user is shown when the system asks
+(`docs/workflows/invoice-match-review.md §5`); a Candidate has no score and no percentage.
+
+Several Candidates may exist for one Invoice, and having Candidates is not the same as
+having a Match. A Match exists only once one of them is linked.
+
+A Candidate for an Invoice is a transaction. When Gmail retrieval proposes documents for
+an Invoice Requirement, those are a different kind of proposal about a different pair of
+things, and the two are not the same entity.
+
+### Suspected Duplicate
+
+An Invoice the system believes may be the same underlying invoice as one already on file —
+most often the same document retrieved from Gmail and later uploaded by hand.
+
+Suspected, and never acted on alone. A Suspected Duplicate is never linked automatically
+and is never silently merged; it is put in front of the user with both documents and the
+fields that agree and disagree. If they are the same, both files are retained as documents
+of one Invoice and the user chooses which is primary. Nothing is deleted — the user asked
+to deduplicate a record, not to destroy a file.
+
 ### Business Knowledge
 
 Durable, Workspace-scoped facts learned from a user's confirmed decisions: confirmed

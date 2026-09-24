@@ -26,6 +26,7 @@ import {
   bankStatements,
   canonicalTransactions,
   clarificationQuestions,
+  invoiceMatchCandidates,
   invoiceRequirements,
   invoices,
   reconciliationRuns,
@@ -313,6 +314,149 @@ describe("invoice to transaction is one to one", () => {
 
     const rows = await h.db.select().from(invoices);
     expect(rows).toHaveLength(2);
+  });
+});
+
+describe("transactions proposed for an invoice", () => {
+  // spec: docs/workflows/manual-invoice-upload.md §8 · docs/decisions/0011
+  async function insertInvoice(overrides: Record<string, unknown> = {}) {
+    const [row] = await h.db
+      .insert(invoices)
+      .values({ workspaceId, invoiceNumber: "INV-1", ...overrides })
+      .returning();
+    return row;
+  }
+
+  it("proposes a transaction for an invoice at most once", async () => {
+    // A re-run replaces the candidate set. If it could double it instead, the user would
+    // be shown the same transaction twice and the ranks would stop meaning anything.
+    const invoice = await insertInvoice();
+    const txn = await insertTransaction();
+
+    await h.db.insert(invoiceMatchCandidates).values({
+      workspaceId,
+      invoiceId: invoice.id,
+      canonicalTransactionId: txn.id,
+      rank: 0,
+      evidence: [],
+    });
+
+    await expectUniqueViolation(
+      () =>
+        h.db.insert(invoiceMatchCandidates).values({
+          workspaceId,
+          invoiceId: invoice.id,
+          canonicalTransactionId: txn.id,
+          rank: 1,
+          evidence: [],
+        }),
+      "invoice_match_candidates_identity_idx",
+    );
+  });
+
+  it("proposes several transactions for one invoice", async () => {
+    const invoice = await insertInvoice();
+    const first = await insertTransaction({ occurrenceIndex: 0 });
+    const second = await insertTransaction({ occurrenceIndex: 1 });
+
+    await h.db.insert(invoiceMatchCandidates).values([
+      {
+        workspaceId,
+        invoiceId: invoice.id,
+        canonicalTransactionId: first.id,
+        rank: 0,
+        evidence: [],
+      },
+      {
+        workspaceId,
+        invoiceId: invoice.id,
+        canonicalTransactionId: second.id,
+        rank: 1,
+        evidence: [],
+      },
+    ]);
+
+    const rows = await h.db.select().from(invoiceMatchCandidates);
+    expect(rows).toHaveLength(2);
+  });
+
+  it("forgets its proposals when the invoice goes", async () => {
+    // Candidates are working-out, not a record of anything. Nothing should outlive the
+    // invoice they were reasoning about.
+    const invoice = await insertInvoice();
+    const txn = await insertTransaction();
+    await h.db.insert(invoiceMatchCandidates).values({
+      workspaceId,
+      invoiceId: invoice.id,
+      canonicalTransactionId: txn.id,
+      rank: 0,
+      evidence: [],
+    });
+
+    await h.db.delete(invoices).where(eq(invoices.id, invoice.id));
+
+    expect(await h.db.select().from(invoiceMatchCandidates)).toHaveLength(0);
+  });
+
+  it("records no verdict until the model has been asked", async () => {
+    const invoice = await insertInvoice();
+    const txn = await insertTransaction();
+    const [row] = await h.db
+      .insert(invoiceMatchCandidates)
+      .values({
+        workspaceId,
+        invoiceId: invoice.id,
+        canonicalTransactionId: txn.id,
+        rank: 0,
+        evidence: [],
+      })
+      .returning();
+
+    // Null means "never asked", which is different from a verdict of DIFFERENT. A
+    // candidate dropped before adjudication must not read as one the model rejected.
+    expect(row.modelVerdict).toBeNull();
+    expect(row.truncated).toBe(false);
+  });
+});
+
+describe("an invoice suspected of being one we already have", () => {
+  // spec: docs/workflows/manual-invoice-upload.md §13 · docs/glossary.md
+  it("survives the invoice it resembled being deleted", async () => {
+    // set null, not cascade. A duplicate is still a real invoice built from a real
+    // document; deleting the thing it looked like must not delete it too.
+    const [original] = await h.db
+      .insert(invoices)
+      .values({ workspaceId, invoiceNumber: "INV-1" })
+      .returning();
+    const [copy] = await h.db
+      .insert(invoices)
+      .values({
+        workspaceId,
+        invoiceNumber: "INV-1",
+        suspectedDuplicateOfInvoiceId: original.id,
+        duplicateReason: "Same vendor, amount and invoice number",
+      })
+      .returning();
+
+    await h.db.delete(invoices).where(eq(invoices.id, original.id));
+
+    const [survivor] = await h.db.select().from(invoices).where(eq(invoices.id, copy.id));
+    expect(survivor).toBeDefined();
+    expect(survivor.suspectedDuplicateOfInvoiceId).toBeNull();
+  });
+
+  it("does not stop the original being linked to its transaction", async () => {
+    // The duplicate is flagged and unlinked; the one-to-one rule still has room for the
+    // original. If flagging consumed the link, a duplicate upload would block the match.
+    const txn = await insertTransaction();
+    const [original] = await h.db
+      .insert(invoices)
+      .values({ workspaceId, canonicalTransactionId: txn.id })
+      .returning();
+    await h.db.insert(invoices).values({ workspaceId, suspectedDuplicateOfInvoiceId: original.id });
+
+    const [linked] = await h.db.select().from(invoices).where(eq(invoices.id, original.id));
+    expect(linked.canonicalTransactionId).toBe(txn.id);
   });
 });
 

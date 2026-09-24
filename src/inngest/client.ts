@@ -77,4 +77,22 @@ export const documentStored = eventType("document/stored", {
   schema: workspaceEvent.extend({ documentId: z.uuid() }),
 });
 
+/**
+ * A document turned out to be an invoice, and the invoice exists. Find its payment.
+ *
+ * Its own event rather than more work inside `understand-document`, for two reasons.
+ *
+ * A flaky matching model would otherwise burn extraction's retry budget and re-run the
+ * reading -- `understandDocument` is idempotent so it would be harmless, and it would also
+ * be a model call spent again for nothing every time matching had a bad minute.
+ *
+ * And `docs/decisions/0010` is explicit that matching must not become a verdict on
+ * feature F's reading: "it converts a reading error into a 'we could not find this'
+ * outcome". Two functions keep the two outcomes separately recorded, which is what lets
+ * `docs/extraction-acceptance.md` and `docs/matching-acceptance.md` count different things.
+ */
+export const invoiceExtracted = eventType("invoice/extracted", {
+  schema: workspaceEvent.extend({ invoiceId: z.uuid() }),
+});
+
 export const inngest = new Inngest({ id: "ledgerwick" });

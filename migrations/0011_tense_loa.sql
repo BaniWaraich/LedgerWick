@@ -1,0 +1,1 @@
+CREATE INDEX "invoice_match_candidates_transaction_idx" ON "invoice_match_candidates" USING btree ("workspace_id","canonical_transaction_id");

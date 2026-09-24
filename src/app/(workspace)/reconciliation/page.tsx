@@ -23,7 +23,7 @@
  * done, or the run needs help. The wording is §6's own, for the stages that are real.
  */
 
-import { eq, isNull } from "drizzle-orm";
+import { inArray, isNull } from "drizzle-orm";
 
 import Link from "next/link";
 
@@ -39,6 +39,29 @@ import { currencyFor } from "../../../money/currencies";
 import { formatAmount } from "../../../money/format";
 import { PollWhileProcessing } from "../statements/[batchId]/poll";
 import styles from "./page.module.css";
+
+/**
+ * The states that need the user, and nothing else.
+ *
+ * `missing-invoice-report.md §6`: "The primary table contains only requirements needing
+ * the user", and `§3`: "Resolved requirements and transactions needing no document are not
+ * shown in it."
+ *
+ * `IDENTIFIED` is here alongside the two §6 names because until features J and K exist
+ * nothing searches, so `IDENTIFIED` is where a requirement waits -- and a requirement the
+ * user cannot see is one the product has silently stopped asking about.
+ *
+ * `EVALUATING` is deliberately absent: a run holds it for the length of one decision and
+ * restores it if the run fails, so a requirement is never left there.
+ */
+const QUEUE = ["IDENTIFIED", "NEEDS_REVIEW", "NOT_FOUND"] as const;
+
+/** `docs/state-machines.md §2`, verbatim. What each state means to the person waiting. */
+const STATE_MESSAGES: Record<string, string> = {
+  IDENTIFIED: "Waiting for a document",
+  NEEDS_REVIEW: "Needs your review",
+  NOT_FOUND: "We couldn't find this one",
+};
 
 /** `docs/workflows/identifying-invoices.md §6`, for the stages that are actually tracked. */
 const MESSAGES: Record<string, string> = {
@@ -58,7 +81,7 @@ export default async function ReconciliationPage() {
   const run = runs.sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime())[0];
 
   const [requirements, transactions, accounts, open] = await Promise.all([
-    scope.select(invoiceRequirements, eq(invoiceRequirements.state, "IDENTIFIED")),
+    scope.select(invoiceRequirements, inArray(invoiceRequirements.state, [...QUEUE])),
     scope.select(canonicalTransactions),
     scope.select(bankAccounts),
     scope.select(clarificationQuestions, isNull(clarificationQuestions.answeredAt)),
@@ -81,7 +104,15 @@ export default async function ReconciliationPage() {
         transaction: NonNullable<typeof row.transaction>;
       } => Boolean(row.transaction),
     )
-    .sort((a, b) => a.transaction.valueDate.localeCompare(b.transaction.valueDate));
+    .sort((a, b) => {
+      // The ones needing a decision first: a queue that buries them under everything
+      // still waiting is a queue nobody works through.
+      const rank = (state: string) => QUEUE.indexOf(state as (typeof QUEUE)[number]);
+      return (
+        rank(b.requirement.state) - rank(a.requirement.state) ||
+        a.transaction.valueDate.localeCompare(b.transaction.valueDate)
+      );
+    });
 
   return (
     <div className={styles.page}>
@@ -115,6 +146,9 @@ export default async function ReconciliationPage() {
                 <p className={styles.vendor}>
                   {requirement.vendorGuess ?? transaction.description}
                 </p>
+                <p className={styles.state}>
+                  {STATE_MESSAGES[requirement.state] ?? requirement.state}
+                </p>
                 <p className={styles.amount}>
                   {(() => {
                     const currency = currencyOf(transaction.bankAccountId);
@@ -129,6 +163,23 @@ export default async function ReconciliationPage() {
                 ) : null}
                 {requirement.reason ? <p className={styles.reason}>{requirement.reason}</p> : null}
               </div>
+
+              {/*
+                Only a requirement something has been assessed for has a review to show.
+                An IDENTIFIED one has no candidates and nothing was searched, so a link
+                would open a screen with nothing on it.
+              */}
+              {requirement.state === "IDENTIFIED" ? null : (
+                <Link
+                  className={styles.review}
+                  href={`/reconciliation/${requirement.id}`}
+                  aria-label={`Review ${requirement.vendorGuess ?? transaction.description}`}
+                >
+                  <span className="material-symbols-outlined" aria-hidden="true">
+                    chevron_right
+                  </span>
+                </Link>
+              )}
             </li>
           ))}
         </ol>
@@ -157,11 +208,14 @@ function EmptyState({ hasRun }: { hasRun: boolean }) {
       </p>
       <p className={styles.emptyBody}>
         {hasRun
-          ? "You can still upload invoices you already have, once matching arrives."
+          ? "You can still upload invoices you already have, and we'll look for the payment."
           : "Upload your bank statements and we'll work out which payments need a document."}
       </p>
-      <Link className={styles.emptyAction} href="/statements/upload">
-        Upload statements
+      <Link
+        className={styles.emptyAction}
+        href={hasRun ? "/documents/upload" : "/statements/upload"}
+      >
+        {hasRun ? "Upload an invoice" : "Upload statements"}
       </Link>
     </div>
   );

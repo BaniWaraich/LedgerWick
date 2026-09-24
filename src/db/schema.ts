@@ -32,6 +32,7 @@ import {
   timestamp,
   uniqueIndex,
   uuid,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
 /* ------------------------------------------------------------------ enums */
@@ -542,6 +543,22 @@ export const invoices = pgTable(
       () => canonicalTransactions.id,
       { onDelete: "set null" },
     ),
+    /**
+     * The invoice this one may be a second copy of. docs/glossary.md, Suspected Duplicate.
+     *
+     * Points at the older invoice, never the other way round, so a third copy of the same
+     * document points at the same original rather than forming a chain nobody can read.
+     *
+     * `set null` rather than `cascade`: if the original is deleted this invoice is no
+     * longer a duplicate of anything, and it is still a real invoice built from a real
+     * document. Deleting the thing it resembled must not delete it.
+     */
+    suspectedDuplicateOfInvoiceId: uuid("suspected_duplicate_of_invoice_id").references(
+      (): AnyPgColumn => invoices.id,
+      { onDelete: "set null" },
+    ),
+    /** Which fields agreed, in the user's language. Shown beside both documents. */
+    duplicateReason: text("duplicate_reason"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -551,6 +568,77 @@ export const invoices = pgTable(
       .on(t.canonicalTransactionId)
       .where(sql`canonical_transaction_id is not null`),
     index("invoices_workspace_idx").on(t.workspaceId),
+    // The review queue asks for the flagged ones only, and they are the rare case.
+    index("invoices_duplicate_idx")
+      .on(t.workspaceId, t.suspectedDuplicateOfInvoiceId)
+      .where(sql`suspected_duplicate_of_invoice_id is not null`),
+  ],
+);
+
+/**
+ * A transaction the system proposes as the possible subject of an invoice.
+ *
+ * spec: docs/workflows/manual-invoice-upload.md §8, §9 · decision:
+ * docs/decisions/0011-matching-is-evidence-not-score.md
+ *
+ * A proposal, not a decision. The link itself lives on `invoices.canonicalTransactionId`
+ * and is constrained there; these rows are the working-out, kept so that the screen which
+ * asks the user can show what the system saw rather than a number
+ * (`docs/workflows/invoice-match-review.md §5`).
+ *
+ * `evidence` is persisted rather than recomputed because feature H renders it minutes or
+ * days after the decision, and recomputing would mean H deriving candidates a second time.
+ * Two implementations of the same reasoning drift, and the one the user is shown would be
+ * the one nothing tested.
+ *
+ * `modelVerdict` is `text` and not an enum on purpose. It is a transcript of one model
+ * call, not a state anything moves through, and `docs/state-machines.md` should stay the
+ * list of things that are.
+ *
+ * Deliberately not shared with Gmail retrieval's future candidates. Those propose a
+ * document for a requirement; these propose a transaction for an invoice. One table for
+ * both needs a `kind` column and two nullable foreign-key pairs, and every query then
+ * carries a filter the type system cannot enforce -- the single missing filter
+ * `workspace-scope.ts` exists to make impossible.
+ */
+export const invoiceMatchCandidates = pgTable(
+  "invoice_match_candidates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "cascade" }),
+    canonicalTransactionId: uuid("canonical_transaction_id")
+      .notNull()
+      .references(() => canonicalTransactions.id, { onDelete: "cascade" }),
+    /** Deterministic rank, 0 best. The order the user is shown them in. */
+    rank: integer("rank").notNull(),
+    /** The observable facts that put this transaction here. Never a score. */
+    evidence: jsonb("evidence").notNull(),
+    /** SAME | UNSURE | DIFFERENT, or null where the model was never asked. */
+    modelVerdict: text("model_verdict"),
+    modelReason: text("model_reason"),
+    /** The bounded read hit its cap, so this set is not everything that could have matched. */
+    truncated: boolean("truncated").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // One proposal per pair. A re-run replaces the set; it must not double it.
+    uniqueIndex("invoice_match_candidates_identity_idx").on(t.invoiceId, t.canonicalTransactionId),
+    // Matching's own direction: what did we propose for this invoice.
+    index("invoice_match_candidates_invoice_idx").on(t.workspaceId, t.invoiceId),
+    /*
+     * Review's direction: what was proposed for this payment.
+     *
+     * Match review enters by requirement -- a transaction -- and asks which documents
+     * named it. The unique index above leads with `invoice_id`, so it cannot answer that
+     * without a scan, and the review screen is the one place in the product a person is
+     * waiting on the answer.
+     */
+    index("invoice_match_candidates_transaction_idx").on(t.workspaceId, t.canonicalTransactionId),
   ],
 );
 

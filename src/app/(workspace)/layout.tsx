@@ -55,6 +55,12 @@ export default async function WorkspaceLayout({ children }: { children: React.Re
             </span>
             Statements
           </Link>
+          <Link className={styles.navLink} href="/documents/upload">
+            <span className="material-symbols-outlined" aria-hidden="true">
+              receipt_long
+            </span>
+            Upload invoice
+          </Link>
           <Link className={styles.navLink} href="/reconciliation">
             <span className="material-symbols-outlined" aria-hidden="true">
               fact_check

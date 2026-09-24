@@ -19,6 +19,9 @@ import {
   bankAccounts,
   bankStatements,
   canonicalTransactions,
+  invoiceMatchCandidates,
+  invoiceRequirements,
+  invoices,
   vendors,
   workspaces,
 } from "../../src/db/schema";
@@ -229,6 +232,99 @@ describe("statement intake", () => {
       currency: "INR",
     });
     expect(bobAccount.workspaceId).toBe(bob.workspace.id);
+  });
+});
+
+describe("matching", () => {
+  // spec: docs/phases/phase-1.md §7 G · docs/decisions/0011
+  //
+  // The attacks themselves live in `tests/matching/isolation.test.ts`, which enumerates
+  // every scoped table the feature writes to. This is the entry this file requires for
+  // every workspace-scoped feature, and it covers the table matching added.
+  it("keeps one workspace's match candidates out of another's", async () => {
+    // Seeded in Bob's workspace: this file shares one database across its tests, and the
+    // generic check below asserts Alice's scope reads no transactions at all.
+    const aliceScope = await openWorkspace(h.db, alice.user.id, alice.workspace.id);
+    const bobScope = await openWorkspace(h.db, bob.user.id, bob.workspace.id);
+
+    const [account] = await bobScope.select(bankAccounts);
+    const [transaction] = await bobScope.insert(canonicalTransactions, {
+      bankAccountId: account.id,
+      valueDate: "2026-04-14",
+      amountMinor: 2000n,
+      direction: "DEBIT",
+      currency: "USD",
+      description: "ANTHROPIC",
+      descriptionNormalized: "anthropic",
+      occurrenceIndex: 0,
+    });
+    const [invoice] = await bobScope.insert(invoices, { invoiceNumber: "INV-1" });
+    const [candidate] = await bobScope.insert(invoiceMatchCandidates, {
+      invoiceId: invoice.id,
+      canonicalTransactionId: transaction.id,
+      rank: 0,
+      evidence: [],
+    });
+
+    // Alice knows the id and it buys her nothing -- not the evidence, not the amounts.
+    await expect(
+      aliceScope.select(invoiceMatchCandidates, eq(invoiceMatchCandidates.id, candidate.id)),
+    ).resolves.toEqual([]);
+    // Nor can she rewrite what another workspace was shown.
+    await expect(
+      aliceScope.update(
+        invoiceMatchCandidates,
+        { modelVerdict: "SAME" },
+        eq(invoiceMatchCandidates.id, candidate.id),
+      ),
+    ).resolves.toEqual([]);
+  });
+});
+
+describe("match review", () => {
+  // spec: docs/phases/phase-1.md §7 H · docs/workflows/invoice-match-review.md §7
+  //
+  // The attacks themselves live in `tests/review/isolation.test.ts`, which calls every
+  // exported function in `src/review/` with a victim's id. This is the entry this file
+  // requires for every workspace-scoped feature, and it covers the column review writes
+  // that nothing else does.
+  it("keeps one workspace's rejections out of another's", async () => {
+    // Seeded into Bob's workspace: this file shares one database and the generic check at
+    // the end asserts Alice's scope reads no canonical transactions.
+    const aliceScope = await openWorkspace(h.db, alice.user.id, alice.workspace.id);
+    const bobScope = await openWorkspace(h.db, bob.user.id, bob.workspace.id);
+
+    const [account] = await bobScope.select(bankAccounts);
+    const [transaction] = await bobScope.insert(canonicalTransactions, {
+      bankAccountId: account.id,
+      valueDate: "2026-04-14",
+      amountMinor: 2000n,
+      direction: "DEBIT",
+      currency: "USD",
+      // Distinct from the transaction the matching entry above seeds: this file shares
+      // one database, and the canonical identity index is unique per account.
+      description: "ADOBE",
+      descriptionNormalized: "adobe",
+      occurrenceIndex: 7,
+    });
+    const [requirement] = await bobScope.insert(invoiceRequirements, {
+      canonicalTransactionId: transaction.id,
+      state: "NOT_FOUND",
+      rejectedDocumentIds: ["11111111-1111-4111-8111-111111111111"],
+    });
+
+    // Alice knows the id and it buys her nothing -- not which documents Bob rejected.
+    await expect(
+      aliceScope.select(invoiceRequirements, eq(invoiceRequirements.id, requirement.id)),
+    ).resolves.toEqual([]);
+    // Nor can she erase a rejection so a document Bob turned down is offered again.
+    await expect(
+      aliceScope.update(
+        invoiceRequirements,
+        { rejectedDocumentIds: [] },
+        eq(invoiceRequirements.id, requirement.id),
+      ),
+    ).resolves.toEqual([]);
   });
 });
 
