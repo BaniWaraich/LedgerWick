@@ -35,11 +35,9 @@
 
 import { and, eq, isNull } from "drizzle-orm";
 
-import { businessKnowledge, clarificationQuestions } from "../db/schema";
+import { clarificationQuestions } from "../db/schema";
 import type { WorkspaceScope } from "../db/workspace-scope";
-
-/** What a confirmed answer is filed under. §7's examples are all about a payee. */
-const VENDOR = "vendor";
+import { learn, normalizeVendor, VENDOR } from "./knowledge";
 
 export interface AnswerOutcome {
   /** False when the question was already answered, or is not this workspace's. */
@@ -79,55 +77,11 @@ export async function recordAnswer(
   const key = normalizeVendor(question.vendorGuess);
   if (!key) return { recorded: true, learned: false };
 
-  await learn(scope, key, {
+  await learn(scope, VENDOR, key, {
     vendor: question.vendorGuess,
     answer: trimmed,
     question: question.question,
   });
 
   return { recorded: true, learned: true };
-}
-
-/**
- * Write the fact, or replace the one that is there.
- *
- * `business_knowledge_identity_idx` makes `(workspace, kind, key)` unique, so a user
- * changing their mind about a vendor replaces what we knew rather than leaving two
- * contradictory facts for a later run to choose between.
- */
-async function learn(scope: WorkspaceScope, key: string, value: unknown): Promise<void> {
-  const [existing] = await scope.select(
-    businessKnowledge,
-    and(eq(businessKnowledge.kind, VENDOR), eq(businessKnowledge.key, key)),
-  );
-
-  if (existing) {
-    await scope.update(
-      businessKnowledge,
-      { value, confirmedAt: new Date() },
-      eq(businessKnowledge.id, existing.id),
-    );
-    return;
-  }
-
-  await scope.insert(businessKnowledge, { kind: VENDOR, key, value });
-}
-
-/**
- * A payee's name, reduced to what two spellings of it have in common.
- *
- * Case and punctuation only -- the same discipline `canonical_transactions`'
- * `descriptionNormalized` keeps, and for the same reason: this is formatting, never
- * interpretation. "Anthropic" and "ANTHROPIC." are one vendor; deciding that "Anthropic"
- * and "Claude" are is a judgment, and it belongs to the model and the user, not here.
- */
-function normalizeVendor(name: string | null): string | null {
-  if (!name) return null;
-
-  const normalized = name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-
-  return normalized.length === 0 ? null : normalized;
 }
