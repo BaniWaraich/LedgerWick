@@ -32,7 +32,7 @@
  * Inngest retries -- `architecture.md §15`'s line between recoverable and not.
  */
 
-import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, eq, isNotNull, isNull } from "drizzle-orm";
 
 import {
   canonicalTransactions,
@@ -141,24 +141,48 @@ async function recordCandidates(
   );
 }
 
-/** Move the requirement on this transaction to a state the user acts on. */
+/** A requirement state this run is allowed to write. */
+type RunState = "IDENTIFIED" | "EVALUATING" | "NEEDS_REVIEW" | "NOT_FOUND";
+
+/**
+ * Move one requirement to a state the user acts on.
+ *
+ * One, not a set. A run is one decision about one document, and the transaction it
+ * proposes is the only one it has assessed -- see the anchor in `matchInvoice`.
+ */
 async function setRequirementState(
   scope: WorkspaceScope,
-  transactionIds: string[],
-  state: "EVALUATING" | "NEEDS_REVIEW" | "NOT_FOUND",
+  transactionId: string | null,
+  state: RunState,
 ): Promise<void> {
-  if (transactionIds.length === 0) return;
+  if (transactionId === null) return;
 
   await scope.update(
     invoiceRequirements,
     { state, updatedAt: new Date() },
     and(
-      inArray(invoiceRequirements.canonicalTransactionId, transactionIds),
+      eq(invoiceRequirements.canonicalTransactionId, transactionId),
       // A resolved requirement is settled. Matching a later document must not reopen a
-      // question the user already answered.
+      // question the user already answered -- and this is also what stops the restore
+      // below from undoing a link that succeeded.
       isNull(invoiceRequirements.resolutionMethod),
     ),
   );
+}
+
+/** The state the requirement on this transaction is in, if there is one. */
+async function requirementState(
+  scope: WorkspaceScope,
+  transactionId: string | null,
+): Promise<RunState | null> {
+  if (transactionId === null) return null;
+
+  const requirement = await scope.selectOne(
+    invoiceRequirements,
+    eq(invoiceRequirements.canonicalTransactionId, transactionId),
+  );
+
+  return (requirement?.state as RunState | undefined) ?? null;
 }
 
 /** The transaction a document was bound to on the way in, if it was. */
@@ -233,68 +257,112 @@ export async function matchInvoice(
   if (duplicate !== null) await flagDuplicate(scope, invoiceId, duplicate);
 
   const { candidates, truncated } = await generateCandidates(scope, facts);
-  const transactionIds = candidates.map((candidate) => candidate.transaction.id);
 
-  await setRequirementState(scope, transactionIds, "EVALUATING");
+  /*
+   * The one requirement this run is entitled to move.
+   *
+   * A run is one decision about one document, and the best candidate is the only
+   * transaction it actually proposes. Marking all five would put five rows in the action
+   * queue for one decision, and resolving the right one would leave four false alarms the
+   * user has to dismiss by hand.
+   *
+   * Nothing is lost by narrowing. Feature H enters by requirement and reads candidates by
+   * `canonical_transaction_id`, so a document that ranked some other transaction second is
+   * still shown, with its evidence, on that transaction's review screen. Only the state
+   * transition is narrowed; the evidence stays discoverable from every transaction it
+   * names.
+   *
+   * `decide.ts` allows an automatic link only when exactly one candidate survives, so the
+   * anchor and the transaction that gets linked are always the same row.
+   */
+  const anchor = candidates[0]?.transaction.id ?? null;
+  const before = await requirementState(scope, anchor);
 
-  const adjudication = await adjudicate(deps, facts, candidates);
+  try {
+    await setRequirementState(scope, anchor, "EVALUATING");
 
-  await recordCandidates(scope, invoiceId, candidates, truncated, adjudication);
+    const adjudication = await adjudicate(deps, facts, candidates);
 
-  const decision = decideOutcome({
-    // The in-memory evidence, with amounts still `bigint`. The policy compares them, and
-    // the stored form is text -- `toStored` is for the column, not for deciding.
-    candidates: candidates.map((candidate) => ({
-      rank: candidate.rank,
-      evidence: candidate.evidence,
-    })),
-    adjudication,
-    suspectedDuplicate: duplicate !== null,
-    truncated,
-  });
+    await recordCandidates(scope, invoiceId, candidates, truncated, adjudication);
 
-  if (decision.kind === "AUTO_MATCH") {
-    const chosen = candidates[decision.rank];
-    const linked = await linkInvoice(scope, invoiceId, chosen.transaction.id, "AUTO_MATCHED");
+    const decision = decideOutcome({
+      // The in-memory evidence, with amounts still `bigint`. The policy compares them, and
+      // the stored form is text -- `toStored` is for the column, not for deciding.
+      candidates: candidates.map((candidate) => ({
+        rank: candidate.rank,
+        evidence: candidate.evidence,
+      })),
+      adjudication,
+      suspectedDuplicate: duplicate !== null,
+      truncated,
+    });
 
-    if (linked.linked) {
+    if (decision.kind === "AUTO_MATCH") {
+      const chosen = candidates[decision.rank];
+      const linked = await linkInvoice(scope, invoiceId, chosen.transaction.id, "AUTO_MATCHED");
+
+      if (linked.linked) {
+        return {
+          outcome: "LINKED",
+          transactionId: chosen.transaction.id,
+          candidates: candidates.length,
+          reason: describeAll(chosen.evidence).join(" · "),
+        };
+      }
+
+      // Lost the payment between deciding and writing. That is a question for the user, not
+      // an error: the evidence was good and the payment is taken.
+      await setRequirementState(scope, anchor, "NEEDS_REVIEW");
       return {
-        outcome: "LINKED",
-        transactionId: chosen.transaction.id,
+        outcome: "NEEDS_REVIEW",
+        transactionId: null,
         candidates: candidates.length,
-        reason: describeAll(chosen.evidence).join(" · "),
+        reason: linked.reason,
       };
     }
 
-    // Lost the payment between deciding and writing. That is a question for the user, not
-    // an error: the evidence was good and the payment is taken.
-    await setRequirementState(scope, transactionIds, "NEEDS_REVIEW");
+    /*
+     * No candidate at all.
+     *
+     * Nothing moves. `NOT_FOUND` means "assessment completed and nothing suitable was
+     * established **for this transaction**", and an invoice that found no payment has
+     * assessed no transaction -- it is a fact about the invoice. A requirement reaches
+     * `NOT_FOUND` when retrieval searched and came back empty, or when the user rejects
+     * every candidate in review.
+     */
+    if (decision.kind === "NO_MATCH") {
+      return {
+        outcome: duplicate === null ? "NOT_FOUND" : "DUPLICATE",
+        transactionId: null,
+        candidates: 0,
+        reason:
+          duplicate?.reason ?? "We couldn't find a payment on your statements that matches this.",
+      };
+    }
+
+    await setRequirementState(scope, anchor, "NEEDS_REVIEW");
     return {
-      outcome: "NEEDS_REVIEW",
+      outcome: duplicate === null ? "NEEDS_REVIEW" : "DUPLICATE",
       transactionId: null,
       candidates: candidates.length,
-      reason: linked.reason,
+      reason: duplicate?.reason ?? decision.blockedBy,
     };
+  } catch (error) {
+    /*
+     * `EVALUATING` must not outlive the run.
+     *
+     * It means "candidates are being assessed", and a run that has thrown is assessing
+     * nothing. Worse, the action queue shows neither `EVALUATING` nor `IDENTIFIED` as
+     * needing attention, so a stranded requirement is a payment that silently stops being
+     * anybody's problem.
+     *
+     * A provider timeout is not a verdict. Inngest retries, and the retry should start
+     * from the state the first attempt inherited. The `isNull(resolutionMethod)` guard
+     * inside `setRequirementState` means this cannot undo a link that did succeed.
+     */
+    if (before !== null) await setRequirementState(scope, anchor, before);
+    throw error;
   }
-
-  if (decision.kind === "NO_MATCH") {
-    await setRequirementState(scope, transactionIds, "NOT_FOUND");
-    return {
-      outcome: duplicate === null ? "NOT_FOUND" : "DUPLICATE",
-      transactionId: null,
-      candidates: 0,
-      reason:
-        duplicate?.reason ?? "We couldn't find a payment on your statements that matches this.",
-    };
-  }
-
-  await setRequirementState(scope, transactionIds, "NEEDS_REVIEW");
-  return {
-    outcome: duplicate === null ? "NEEDS_REVIEW" : "DUPLICATE",
-    transactionId: null,
-    candidates: candidates.length,
-    reason: duplicate?.reason ?? decision.blockedBy,
-  };
 }
 
 /**

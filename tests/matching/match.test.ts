@@ -364,3 +364,94 @@ describe("an invoice that is not yours", () => {
     expect(row.canonicalTransactionId).toBeNull();
   });
 });
+
+describe("the requirements a run is entitled to touch", () => {
+  /**
+   * spec: docs/state-machines.md §2 · docs/workflows/invoice-match-review.md §11
+   *
+   * One upload is one decision about one document. Marking every candidate's requirement
+   * makes the action queue say five things need attention when one does, and resolving
+   * the right one leaves four false alarms the user has to dismiss by hand.
+   */
+  it("marks only the requirement it is actually proposing", async () => {
+    const anchor = await insertTransaction({ occurrenceIndex: 0 });
+    const alsoNearby = await insertTransaction({ occurrenceIndex: 1 });
+    await h.db.insert(invoiceRequirements).values([
+      { workspaceId, canonicalTransactionId: anchor.id },
+      { workspaceId, canonicalTransactionId: alsoNearby.id },
+    ]);
+    const { invoice } = await insertInvoice();
+
+    await matchInvoice(scope, invoice.id, deps(unsure));
+
+    const states = (await h.db.select().from(invoiceRequirements)).map((row) => row.state);
+
+    // Which of two equally good candidates anchors the run is decided by the id tie-break
+    // in `candidates.ts`, so the count is the assertion and the identity is not. One row
+    // is in the queue; the other was never assessed and saying otherwise would put a row
+    // there that nothing is waiting on.
+    expect(states.filter((state) => state === "NEEDS_REVIEW")).toHaveLength(1);
+    expect(states.filter((state) => state === "IDENTIFIED")).toHaveLength(1);
+    expect(anchor.id).not.toBe(alsoNearby.id);
+  });
+
+  it("leaves nothing in EVALUATING, whatever the outcome", async () => {
+    // EVALUATING means "candidates are being assessed". A run that has returned is not
+    // assessing anything, and the action queue shows neither EVALUATING nor IDENTIFIED
+    // as needing review -- so a stranded requirement is a payment that silently stops
+    // being anybody's problem.
+    let occurrence = 0;
+    for (const adjudicator of [agrees, unsure, cannotAnswer]) {
+      occurrence += 1;
+      const txn = await insertTransaction({ occurrenceIndex: occurrence });
+      await h.db
+        .insert(invoiceRequirements)
+        .values({ workspaceId, canonicalTransactionId: txn.id });
+      const { invoice } = await insertInvoice();
+
+      await matchInvoice(scope, invoice.id, deps(adjudicator));
+    }
+
+    const rows = await h.db.select().from(invoiceRequirements);
+    expect(rows.filter((row) => row.state === "EVALUATING")).toEqual([]);
+  });
+
+  it("puts the requirement back where it found it when the run fails", async () => {
+    // A provider timeout is not a verdict. Inngest retries, and the retry must start from
+    // the state the first attempt inherited rather than from a state no screen renders.
+    const txn = await insertTransaction();
+    await h.db.insert(invoiceRequirements).values({ workspaceId, canonicalTransactionId: txn.id });
+    const { invoice } = await insertInvoice();
+
+    const explodes: AdjudicateMatch = async () => {
+      throw new Error("gateway timed out");
+    };
+
+    await expect(matchInvoice(scope, invoice.id, deps(explodes))).rejects.toThrow(
+      "gateway timed out",
+    );
+
+    const [requirement] = await h.db.select().from(invoiceRequirements);
+    expect(requirement.state).toBe("IDENTIFIED");
+  });
+
+  it("does not report a transaction it merely passed near as not found", async () => {
+    // NOT_FOUND means "assessment completed and nothing suitable was established for this
+    // transaction". Nothing was assessed for a transaction no candidate named.
+    const nearby = await insertTransaction({
+      amountMinor: 999999n,
+      description: "ELECTRICITY BOARD",
+      descriptionNormalized: "electricity board",
+    });
+    await h.db
+      .insert(invoiceRequirements)
+      .values({ workspaceId, canonicalTransactionId: nearby.id });
+    const { invoice } = await insertInvoice();
+
+    const outcome = await matchInvoice(scope, invoice.id, deps(agrees));
+
+    expect(outcome.outcome).toBe("NOT_FOUND");
+    const [requirement] = await h.db.select().from(invoiceRequirements);
+    expect(requirement.state).toBe("IDENTIFIED");
+  });
+});
