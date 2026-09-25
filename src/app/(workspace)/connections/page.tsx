@@ -1,7 +1,10 @@
 /**
  * The workspace's mailboxes: connect, reconnect, disconnect.
  *
- * spec: docs/workflows/connect-gmail.md §3 B and C, §5 "What the user is told", §9, §10
+ * spec: docs/workflows/connect-gmail.md §3, §5 "What the user is told", §9, §10
+ *
+ * Also the onboarding prompt (§3 A): a new workspace arrives here with `?welcome=1`, and the
+ * prompt says plainly that connecting can be skipped.
  *
  * Server-rendered throughout, with no client component: the disconnect confirmation is a
  * second view of this page (`?confirm=`) rather than a dialog, so the warning §10 requires
@@ -77,6 +80,7 @@ export default async function ConnectionsPage({
     workspaces.find((w) => w.id === scope.workspaceId)?.name ?? "this workspace";
   const connections = await listConnections(scope);
 
+  const welcome = one(params.welcome) === "1";
   const error = one(params.error);
   const connectedId = one(params.connected);
   const disconnected = one(params.disconnected);
@@ -88,11 +92,19 @@ export default async function ConnectionsPage({
   return (
     <div className={styles.page}>
       <header className={styles.header}>
-        <h1 className={styles.title}>Connected mailboxes</h1>
+        <h1 className={styles.title}>
+          {welcome ? `${workspaceName} is ready` : "Connected mailboxes"}
+        </h1>
         <p className={styles.subtitle}>
           Ledgerwick searches the Gmail accounts you connect for the invoices and receipts behind
           your payments.
         </p>
+        {welcome ? (
+          <p className={styles.meta}>
+            Connecting is optional. You can skip it and upload invoices yourself, and connect a
+            mailbox from here whenever you like. <Link href="/home">Skip for now</Link>
+          </p>
+        ) : null}
       </header>
 
       {error ? (
