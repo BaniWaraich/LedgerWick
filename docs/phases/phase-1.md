@@ -487,6 +487,9 @@ One thing H creates that feature I must settle: a `NOT_REQUIRED` requirement is 
 but was never *matched*, so `missing-invoice-report.md §5`'s three-way sum would count it
 as matched. The discriminator is persisted; the decision is I's.
 
+**Settled by I** (`docs/decisions/0014`): `NOT_REQUIRED` leaves the denominator and is shown
+as its own line, and the sum gains the requirements waiting and blocked.
+
 ---
 
 ### I. Missing Invoice Report

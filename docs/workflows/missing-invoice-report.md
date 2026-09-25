@@ -27,15 +27,24 @@ The page should let the user:
 
 ## 3. Inputs
 
-The report is a view over persisted state. It computes nothing of its own.
+The report is a view over persisted state. It computes nothing of its own: every count is
+read live from Invoice Requirement state at the moment the page is shown, and nothing is
+stored or cached for it. The latest Reconciliation Run supplies the report's identity, date
+and coverage; it does not supply the counts
+(`docs/decisions/0014-report-counts-live-across-the-workspace.md`).
 
 ### Reconciliation Run
 
 - Run ID
 - Run date
 - Statement Coverage examined
-- Bank accounts included
-- Canonical Transactions processed
+
+The bank accounts included are those with a successfully processed Bank Statement — the
+same statements the Run's coverage is taken from. A Run does not record them separately.
+
+### Canonical Transactions
+
+- How many the Workspace holds — the _transactions processed_ line of §5.
 
 ### Invoice Requirements
 
@@ -44,8 +53,8 @@ document is required, the requirement state, the resolving document where one ex
 the resolution method.
 
 The action queue shows requirements in `NOT_FOUND` and `NEEDS_REVIEW`
-(`docs/state-machines.md §2`). Resolved requirements and transactions needing no document
-are not shown in it.
+(`docs/state-machines.md §2`), and — until Gmail retrieval exists — `IDENTIFIED` (§6).
+Resolved requirements and transactions needing no document are not shown in it.
 
 ---
 
@@ -86,8 +95,46 @@ Anywhere the product says "12 expected, 9 found, 3 missing", _expected_ means In
 Requirements, never transactions. A transaction that needs no document is not missing
 anything.
 
+### Every requirement is counted exactly once
+
+"Matched + not found + needs review" is the shape of the summary once retrieval runs. It
+is not the whole of it: a requirement may also be waiting for a document, blocked on a
+connection, or resolved by the user saying no document is needed. A summary that leaves
+any of them out has a denominator the user cannot reconcile, so each state belongs to
+exactly one line:
+
+| Requirement                                            | Line                     |
+| ------------------------------------------------------ | ------------------------ |
+| `RESOLVED`, any method except `NOT_REQUIRED`           | matched                  |
+| `NOT_FOUND`                                            | not found                |
+| `NEEDS_REVIEW`                                         | need review              |
+| `IDENTIFIED`, `SEARCHING`, `EVALUATING`, `FAILED`      | waiting for a document   |
+| `BLOCKED`                                              | blocked (see §6)         |
+| `RESOLVED` with method `NOT_REQUIRED`                  | need no document         |
+
+```text
+matched + not found + need review + waiting + blocked = documents required
+```
+
+**`NOT_REQUIRED` is outside documents required.** The user has said this transaction needs
+no document, and a transaction that needs no document is not missing anything. It is
+shown as its own line beneath the summary, so the number that left the denominator is
+visible rather than silently gone.
+
+**The counts cover the whole Workspace, not only the latest Run's requirements.** Runs are
+incremental — each judges only transactions no earlier Run has — so a Run started by
+answering one clarification question may create no requirements at all. Counting only its
+own would tell the user they owe nothing.
+
+`FAILED` is waiting rather than a line of its own: it is retried, and it is not the user's
+to act on (`docs/state-machines.md §2`).
+
 If the run's coverage has gaps, say so here. A report that looks complete while three
 months are unexamined is actively misleading.
+
+**Deferred in Phase 1.** Surfacing coverage gaps is out of scope for Phase 1
+(`docs/phases/phase-1.md §3`). The report shows the span examined; it does not yet name the
+months inside it that no statement covers.
 
 ---
 
@@ -110,6 +157,16 @@ The system found something plausible but could not decide.
 
 Both lead into `invoice-match-review.md`.
 
+### Waiting for a document
+
+Requirements in `IDENTIFIED`. Until Gmail retrieval exists nothing searches, so this is
+where a requirement waits for the user to upload its document, rather than a transient
+state on the way to being searched for. Hiding it would hide most of the work
+(`docs/decisions/0012`). Each leads to uploading a document for that transaction.
+
+Revisit when retrieval lands: `IDENTIFIED` then becomes transient again, and may leave the
+queue.
+
 ### Blocked
 
 Requirements in `BLOCKED` are shown separately, above the queue, because they are not the
@@ -121,11 +178,17 @@ the user and a batch of results.
 [Reconnect]
 ```
 
+Until Gmail connections exist (feature J), nothing records which connection a requirement
+is blocked on, so the prompt states the count and not the account.
+
 ---
 
 ## 7. Filtering
 
-At minimum: All / Not found / Needs review.
+At minimum: All / Not found / Needs review, and Waiting for a document while §6 keeps
+`IDENTIFIED` in the queue.
+
+Filters narrow the queue. They never change the summary.
 
 The table must never become a dump of every transaction. A matched transaction needs no
 attention and does not belong here.
