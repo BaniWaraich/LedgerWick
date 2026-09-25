@@ -107,31 +107,13 @@ headers rather than the full text of a business's correspondence. That is worth 
 its own terms — but it is not a substitute for the assessment, and must not be described as
 one.
 
-**OPEN DECISION** — whether to use the Gmail API at all.
+**Decided — the Gmail API, with OAuth.** See `docs/decisions/0015-gmail-api-with-casa.md`.
 
-_Option A — Gmail API with OAuth (assumed by this document)._ Reads existing mail, including
-everything already in the mailbox. Requires CASA: a third-party audit, a real cost, and
-weeks of lead time. Standard, recognizable consent flow.
-
-_Option B — auto-forwarding to an address Muneem Ji controls._ The user sets a Gmail filter
-forwarding invoice-like mail to a per-workspace address; we ingest by SMTP/webhook. No
-OAuth, no Restricted scope, no CASA.
-
-Option B looks cheaper and probably is not, for one reason that may be decisive:
-**forwarding is prospective.** It cannot see mail that already exists. The product's primary
-flow is uploading past statements and finding the documents for them, which is retroactive
-by definition — so Option B cannot serve it at all, only the steady state afterwards.
-
-It also changes what we are: holding a mailbox rather than reading one, which replaces the
-assessment with an inbound-mail security burden of our own (spoofing, unsolicited mail,
-retention of content nobody reviewed) and a fragile setup step the user performs inside
-Gmail and can silently break.
-
-The recommendation is **Option A**, accepting CASA as a cost of the product, with Option B
-reconsidered only as a later addition for users who refuse OAuth.
-
-This must be settled before launch. It does not block development, which proceeds against a
-test account under an unverified app.
+Auto-forwarding to an address Muneem Ji controls was considered and rejected as the primary
+path: **forwarding is prospective.** It cannot see mail that already exists, and the
+product's primary flow — uploading past statements and finding the documents for them — is
+retroactive by definition. It may be reconsidered later as an addition for users who refuse
+OAuth. CASA is accepted as a cost of the product.
 
 ### What the user is told
 

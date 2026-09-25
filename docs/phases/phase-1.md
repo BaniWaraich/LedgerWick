@@ -594,7 +594,8 @@ A**, in parallel, because they are calendar time we cannot compress later. The *
 itself cannot be**: it requires a demo video showing the scope's data actually being used, so it
 is gated on K rather than on lead time, and the CASA clock starts there (§1). The
 `connect-gmail.md §5` OPEN DECISION — Gmail API versus forwarding — must be settled before J is
-defined, and it is a product decision, not an implementation detail.
+defined, and it is a product decision, not an implementation detail. **Settled** before J was
+defined: the Gmail API (`docs/decisions/0015-gmail-api-with-casa.md`).
 
 ---
 
