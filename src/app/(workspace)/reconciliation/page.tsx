@@ -1,60 +1,36 @@
 /**
- * What the business needs documents for.
+ * The Missing Invoice Report: what the user still has to do.
  *
- * spec: docs/workflows/identifying-invoices.md §5 Step 7, §6 and §10
+ * spec: docs/workflows/missing-invoice-report.md §5, §6, §7, §8 ·
+ * docs/workflows/identifying-invoices.md §6 and §10
+ * decision: docs/decisions/0014-report-counts-live-across-the-workspace.md
  *
- * §5 Step 7 asks for a human-readable list, and shows one: vendor, amount, date, and what
- * the payment was. Not a table of transactions -- the whole point of feature E is that this
- * is shorter than the statement it came from.
+ * Every word comes from the database, through `src/report/report.ts`. `architecture.md §14`
+ * asks exactly that, and it is what makes a refresh, or returning from the review screen,
+ * show the truth: review revalidates this path, and the next read is the new state.
  *
- * Every word comes from the database. `architecture.md §14` asks exactly that, which is what
- * makes a refresh, or coming back tomorrow, show the truth rather than whatever the browser
- * was holding.
+ * ## Why the run's stages are coarser here than in identifying-invoices §6
  *
- * ## Why the stages are coarser here than in §6
+ * §6 lists five stages and is explicit that the analysis "does not have a persisted state
+ * model of its own". Showing all five would mean inventing progress the system is not
+ * tracking. So the page shows the stages it can stand behind: the run is working, the run
+ * is done, or the run needs help.
  *
- * §6 lists five stages -- evaluating, identifying, checking knowledge, awaiting answers,
- * complete -- and is explicit in the same breath that this analysis "does not have a
- * persisted state model of its own". It does not, and nothing writes those five anywhere.
- * Showing all five would mean inventing progress the system is not tracking, which is the
- * same dishonesty as the percentage §6 goes on to forbid, only harder to spot.
+ * ## What is not here yet
  *
- * So the page shows the stages it can actually stand behind: the run is working, the run is
- * done, or the run needs help. The wording is §6's own, for the stages that are real.
+ * The Excel download is feature L's, and the blocked prompt's Reconnect is feature J's.
+ * Neither is shown as a button to nothing.
  */
-
-import { inArray, isNull } from "drizzle-orm";
 
 import Link from "next/link";
 
 import { requireScope } from "../../../auth/workspace";
-import {
-  bankAccounts,
-  canonicalTransactions,
-  clarificationQuestions,
-  invoiceRequirements,
-  reconciliationRuns,
-} from "../../../db/schema";
 import { currencyFor } from "../../../money/currencies";
 import { formatAmount } from "../../../money/format";
+import { missingInvoiceReport, type QueueRow } from "../../../report/report";
+import { parseFilter, type Filter, type Summary } from "../../../report/summary";
 import { PollWhileProcessing } from "../statements/[batchId]/poll";
 import styles from "./page.module.css";
-
-/**
- * The states that need the user, and nothing else.
- *
- * `missing-invoice-report.md §6`: "The primary table contains only requirements needing
- * the user", and `§3`: "Resolved requirements and transactions needing no document are not
- * shown in it."
- *
- * `IDENTIFIED` is here alongside the two §6 names because until features J and K exist
- * nothing searches, so `IDENTIFIED` is where a requirement waits -- and a requirement the
- * user cannot see is one the product has silently stopped asking about.
- *
- * `EVALUATING` is deliberately absent: a run holds it for the length of one decision and
- * restores it if the run fails, so a requirement is never left there.
- */
-const QUEUE = ["IDENTIFIED", "NEEDS_REVIEW", "NOT_FOUND"] as const;
 
 /** `docs/state-machines.md §2`, verbatim. What each state means to the person waiting. */
 const STATE_MESSAGES: Record<string, string> = {
@@ -71,53 +47,38 @@ const MESSAGES: Record<string, string> = {
   FAILED: "We ran into an issue analysing your transactions. Your statements are safe.",
 };
 
-export default async function ReconciliationPage() {
+/** §7's filters, in the order they are offered. */
+const FILTER_LINKS: { filter: Filter; label: string }[] = [
+  { filter: "all", label: "All" },
+  { filter: "not-found", label: "Not found" },
+  { filter: "needs-review", label: "Needs review" },
+  { filter: "waiting", label: "Waiting for a document" },
+];
+
+export default async function ReconciliationPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
   const scope = await requireScope();
+  const filter = parseFilter((await searchParams).filter);
 
-  // The most recent run is the one the user is watching. Runs are retained -- history is
-  // what lets a later run process only what is genuinely new -- so this picks rather than
-  // assumes there is one.
-  const runs = await scope.select(reconciliationRuns);
-  const run = runs.sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime())[0];
-
-  const [requirements, transactions, accounts, open] = await Promise.all([
-    scope.select(invoiceRequirements, inArray(invoiceRequirements.state, [...QUEUE])),
-    scope.select(canonicalTransactions),
-    scope.select(bankAccounts),
-    scope.select(clarificationQuestions, isNull(clarificationQuestions.answeredAt)),
-  ]);
-
-  const transactionById = new Map(transactions.map((transaction) => [transaction.id, transaction]));
-  const currencyOf = (bankAccountId: string) =>
-    currencyFor(accounts.find((account) => account.id === bankAccountId)?.currency);
-
-  const rows = requirements
-    .map((requirement) => ({
-      requirement,
-      transaction: transactionById.get(requirement.canonicalTransactionId),
-    }))
-    .filter(
-      (
-        row,
-      ): row is {
-        requirement: typeof row.requirement;
-        transaction: NonNullable<typeof row.transaction>;
-      } => Boolean(row.transaction),
-    )
-    .sort((a, b) => {
-      // The ones needing a decision first: a queue that buries them under everything
-      // still waiting is a queue nobody works through.
-      const rank = (state: string) => QUEUE.indexOf(state as (typeof QUEUE)[number]);
-      return (
-        rank(b.requirement.state) - rank(a.requirement.state) ||
-        a.transaction.valueDate.localeCompare(b.transaction.valueDate)
-      );
-    });
+  const report = await missingInvoiceReport(scope, filter);
+  const { run, summary } = report;
 
   return (
     <div className={styles.page}>
       <header className={styles.header}>
-        <h1 className={styles.title}>Invoices needed</h1>
+        <div className={styles.headerRow}>
+          <h1 className={styles.title}>Invoices needed</h1>
+          {/* §8: starting again returns to statement upload, and loses nothing. */}
+          <Link className={styles.start} href="/statements/upload">
+            <span className="material-symbols-outlined" aria-hidden="true">
+              add
+            </span>
+            Start new reconciliation
+          </Link>
+        </div>
         <p className={styles.subtitle}>
           {run
             ? (MESSAGES[run.state] ?? run.state)
@@ -125,62 +86,73 @@ export default async function ReconciliationPage() {
         </p>
       </header>
 
-      {open.length > 0 ? (
+      {run ? (
+        <SummaryPanel
+          summary={summary}
+          transactionsProcessed={report.transactionsProcessed}
+          runDate={run.startedAt}
+          coverage={
+            run.coverageStart && run.coverageEnd
+              ? { start: run.coverageStart, end: run.coverageEnd }
+              : null
+          }
+          accounts={report.accounts.map((account) => account.name)}
+        />
+      ) : null}
+
+      {/*
+        §6: blocked requirements are one connection standing between the user and a batch of
+        results, not a decision per row. Until feature J records connections, nothing says
+        which one, so this states the count and nothing it cannot back.
+      */}
+      {summary.blocked > 0 ? (
+        <p className={styles.blocked} role="status">
+          <span className="material-symbols-outlined" aria-hidden="true">
+            link_off
+          </span>
+          {summary.blocked} {summary.blocked === 1 ? "invoice is" : "invoices are"} waiting on a
+          mailbox connection.
+        </p>
+      ) : null}
+
+      {report.openQuestions > 0 ? (
         <Link className={styles.questions} href="/reconciliation/questions">
           <span className="material-symbols-outlined" aria-hidden="true">
             help
           </span>
-          {/* §6's "awaiting answers" stage. It never blocked the run; it is work waiting here. */}
-          We need your help with {open.length} {open.length === 1 ? "payment" : "payments"}.
+          {/* identifying-invoices §6's "awaiting answers": it never blocked the run. */}
+          We need your help with {report.openQuestions}{" "}
+          {report.openQuestions === 1 ? "payment" : "payments"}.
         </Link>
       ) : null}
 
-      {rows.length === 0 ? (
-        <EmptyState hasRun={Boolean(run)} />
+      {run ? (
+        <nav className={styles.filters} aria-label="Filter">
+          {FILTER_LINKS.map((link) => (
+            <Link
+              key={link.filter}
+              className={styles.filter}
+              href={
+                link.filter === "all" ? "/reconciliation" : `/reconciliation?filter=${link.filter}`
+              }
+              aria-current={link.filter === filter ? "page" : undefined}
+            >
+              {link.label}
+            </Link>
+          ))}
+        </nav>
+      ) : null}
+
+      {report.queue.length === 0 ? (
+        <EmptyState
+          hasRun={Boolean(run)}
+          filtered={filter !== "all"}
+          anyRequired={summary.documentsRequired + summary.notRequired > 0}
+        />
       ) : (
         <ol className={styles.list}>
-          {rows.map(({ requirement, transaction }, position) => (
-            <li className={styles.item} key={requirement.id}>
-              <span className={styles.position}>{position + 1}</span>
-              <div className={styles.detail}>
-                <p className={styles.vendor}>
-                  {requirement.vendorGuess ?? transaction.description}
-                </p>
-                <p className={styles.state}>
-                  {STATE_MESSAGES[requirement.state] ?? requirement.state}
-                </p>
-                <p className={styles.amount}>
-                  {(() => {
-                    const currency = currencyOf(transaction.bankAccountId);
-                    return currency
-                      ? formatAmount(transaction.amountMinor, currency)
-                      : `${transaction.currency} ${transaction.amountMinor}`;
-                  })()}
-                </p>
-                <p className={styles.date}>{transaction.valueDate}</p>
-                {requirement.businessContext ? (
-                  <p className={styles.context}>{requirement.businessContext}</p>
-                ) : null}
-                {requirement.reason ? <p className={styles.reason}>{requirement.reason}</p> : null}
-              </div>
-
-              {/*
-                Only a requirement something has been assessed for has a review to show.
-                An IDENTIFIED one has no candidates and nothing was searched, so a link
-                would open a screen with nothing on it.
-              */}
-              {requirement.state === "IDENTIFIED" ? null : (
-                <Link
-                  className={styles.review}
-                  href={`/reconciliation/${requirement.id}`}
-                  aria-label={`Review ${requirement.vendorGuess ?? transaction.description}`}
-                >
-                  <span className="material-symbols-outlined" aria-hidden="true">
-                    chevron_right
-                  </span>
-                </Link>
-              )}
-            </li>
+          {report.queue.map((row, position) => (
+            <QueueItem key={row.requirement.id} row={row} position={position} />
           ))}
         </ol>
       )}
@@ -192,19 +164,147 @@ export default async function ReconciliationPage() {
 }
 
 /**
- * §10: zero invoice requirements is a valid outcome, "not considered a system failure".
+ * §5. The summary orients; it does not act.
  *
- * Which is why this says what it found rather than apologising, and offers the next thing
- * the user can do -- distinguishing "we looked and there was nothing" from "we have not
- * looked yet", because those are different facts and only one of them is reassuring.
+ * Two denominators, never conflated: transactions processed is context, documents required
+ * is what the lines beneath it sum to. What the user said needs no document is outside
+ * both sums and said separately, so the number that left is not silently gone.
  */
-function EmptyState({ hasRun }: { hasRun: boolean }) {
+function SummaryPanel({
+  summary,
+  transactionsProcessed,
+  runDate,
+  coverage,
+  accounts,
+}: {
+  summary: Summary;
+  transactionsProcessed: number;
+  runDate: Date;
+  coverage: { start: string; end: string } | null;
+  accounts: string[];
+}) {
+  const lines: { label: string; value: number }[] = [
+    { label: "matched", value: summary.matched },
+    { label: "not found", value: summary.notFound },
+    {
+      label: summary.needsReview === 1 ? "needs review" : "need review",
+      value: summary.needsReview,
+    },
+    { label: "waiting for a document", value: summary.waiting },
+  ];
+  if (summary.blocked > 0) lines.push({ label: "waiting on a mailbox", value: summary.blocked });
+
+  return (
+    <section className={styles.summary} aria-label="Summary">
+      <p className={styles.processed}>
+        {transactionsProcessed} {transactionsProcessed === 1 ? "transaction" : "transactions"}{" "}
+        processed
+      </p>
+      <p className={styles.required}>{summary.documentsRequired} needed a document</p>
+      <dl className={styles.lines}>
+        {lines.map((line) => (
+          <div className={styles.line} key={line.label}>
+            <dt>{line.label}</dt>
+            <dd>{line.value}</dd>
+          </div>
+        ))}
+      </dl>
+      {summary.notRequired > 0 ? (
+        <p className={styles.runDetail}>
+          {summary.notRequired} {summary.notRequired === 1 ? "payment" : "payments"} marked as
+          needing no document
+        </p>
+      ) : null}
+      <p className={styles.runDetail}>
+        Last run: {runDate.toLocaleDateString("en-IN", { dateStyle: "long" })}
+      </p>
+      {coverage ? (
+        <p className={styles.runDetail}>
+          Coverage: {coverage.start} → {coverage.end}
+          {accounts.length > 0 ? ` · ${accounts.join(", ")}` : null}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+function QueueItem({ row, position }: { row: QueueRow; position: number }) {
+  const { requirement, transaction } = row;
+  const name = requirement.vendorGuess ?? transaction.description;
+  const currency = currencyFor(row.accountCurrency);
+
+  /*
+    A requirement still waiting has nothing to review -- nothing was searched and no
+    candidate exists -- so it leads to uploading its document, already bound to this
+    payment. The others lead into review (§6: "Both lead into invoice-match-review.md").
+  */
+  const href =
+    requirement.state === "IDENTIFIED"
+      ? `/documents/upload?transaction=${transaction.id}`
+      : `/reconciliation/${requirement.id}`;
+  const action = requirement.state === "IDENTIFIED" ? "Upload a document for" : "Review";
+
+  return (
+    <li className={styles.item}>
+      <span className={styles.position}>{position + 1}</span>
+      <div className={styles.detail}>
+        <p className={styles.vendor}>{name}</p>
+        <p className={styles.state}>{STATE_MESSAGES[requirement.state] ?? requirement.state}</p>
+        <p className={styles.amount}>
+          {currency
+            ? formatAmount(transaction.amountMinor, currency)
+            : `${transaction.currency} ${transaction.amountMinor}`}
+        </p>
+        <p className={styles.date}>{transaction.valueDate}</p>
+        {requirement.businessContext ? (
+          <p className={styles.context}>{requirement.businessContext}</p>
+        ) : null}
+        {requirement.reason ? <p className={styles.reason}>{requirement.reason}</p> : null}
+      </div>
+      <Link className={styles.review} href={href} aria-label={`${action} ${name}`}>
+        <span className="material-symbols-outlined" aria-hidden="true">
+          {requirement.state === "IDENTIFIED" ? "upload_file" : "chevron_right"}
+        </span>
+      </Link>
+    </li>
+  );
+}
+
+/**
+ * identifying-invoices §10: zero requirements is a valid outcome, not a failure.
+ *
+ * Different facts, and they must not read alike: we have not looked yet, we looked and
+ * nothing needed a document, everything that did has been dealt with, or this filter
+ * happens to be empty.
+ */
+function EmptyState({
+  hasRun,
+  filtered,
+  anyRequired,
+}: {
+  hasRun: boolean;
+  filtered: boolean;
+  anyRequired: boolean;
+}) {
+  if (filtered) {
+    return (
+      <div className={styles.empty}>
+        <p className={styles.emptyTitle}>Nothing here right now.</p>
+        <Link className={styles.emptyAction} href="/reconciliation">
+          Show everything
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <div className={styles.empty}>
       <p className={styles.emptyTitle}>
-        {hasRun
-          ? "We couldn't find any transactions that appear to need invoices."
-          : "Nothing to show yet."}
+        {!hasRun
+          ? "Nothing to show yet."
+          : anyRequired
+            ? "Nothing needs your attention."
+            : "We couldn't find any transactions that appear to need invoices."}
       </p>
       <p className={styles.emptyBody}>
         {hasRun
