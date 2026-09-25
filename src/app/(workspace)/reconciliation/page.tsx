@@ -18,13 +18,20 @@
  *
  * ## What is not here yet
  *
- * The Excel download is feature L's, and the blocked prompt's Reconnect is feature J's.
- * Neither is shown as a button to nothing.
+ * The Excel download is feature L's, and is not shown as a button to nothing.
+ *
+ * ## The blocked prompt
+ *
+ * Feature J names each mailbox that needs reconnecting, with the Reconnect that fixes it
+ * (`connect-gmail.md §9`). What it cannot yet say is how many invoices wait on *which*
+ * mailbox: nothing records that until feature K writes `BLOCKED` against a connection, so
+ * the blocked count stays one number for the workspace.
  */
 
 import Link from "next/link";
 
 import { requireScope } from "../../../auth/workspace";
+import { listConnections } from "../../../gmail/connections";
 import { currencyFor } from "../../../money/currencies";
 import { formatAmount } from "../../../money/format";
 import { missingInvoiceReport, type QueueRow } from "../../../report/report";
@@ -65,6 +72,9 @@ export default async function ReconciliationPage({
 
   const report = await missingInvoiceReport(scope, filter);
   const { run, summary } = report;
+  const needsReconnecting = (await listConnections(scope)).filter(
+    (connection) => connection.state === "NEEDS_REAUTH",
+  );
 
   return (
     <div className={styles.page}>
@@ -101,9 +111,29 @@ export default async function ReconciliationPage({
       ) : null}
 
       {/*
-        §6: blocked requirements are one connection standing between the user and a batch of
-        results, not a decision per row. Until feature J records connections, nothing says
-        which one, so this states the count and nothing it cannot back.
+        §6: a broken connection is one prompt, not a row per requirement. connect-gmail §9
+        names the account and what it costs; the per-account count waits on feature K.
+      */}
+      {needsReconnecting.map((connection) => (
+        <p key={connection.id} className={styles.blocked} role="status">
+          <span className="material-symbols-outlined" aria-hidden="true">
+            link_off
+          </span>
+          <span>
+            We can&rsquo;t reach {connection.email}. Google needs you to reconnect this account;
+            until then we can&rsquo;t search it for invoices.{" "}
+            <a
+              href={`/api/gmail/connect?workspace=${scope.workspaceId}&reconnect=${connection.id}`}
+            >
+              Reconnect
+            </a>
+          </span>
+        </p>
+      ))}
+
+      {/*
+        The blocked count, for the workspace as a whole: which connection each requirement
+        waits on is recorded by feature K, so this states the number and nothing it cannot back.
       */}
       {summary.blocked > 0 ? (
         <p className={styles.blocked} role="status">
