@@ -85,6 +85,17 @@ Treat CASA as a fixed cost of the Gmail path, not as a variable to design around
 Note also that `readonly` is a superset of `metadata`. Requesting both grants `readonly`;
 the token can read message bodies whatever else is asked for alongside it.
 
+### What the request contains
+
+The connection flow asks for exactly `openid`, `email` and `gmail.readonly`. The first two
+are identity, not mail: they say *which* Google account was granted, so the connection can
+be recorded against that account's stable subject identifier rather than an address that
+can change. Nothing else is requested, and earlier grants are not folded in.
+
+Google lets the user untick the mail permission on the consent screen. A grant that comes
+back without `gmail.readonly` is not a connection: nothing is recorded, and the user is told
+that Ledgerwick cannot search their mail without it.
+
 ### Limiting what our code sees
 
 Since the scope cannot be narrowed, the narrowing has to happen in our own code.
@@ -145,6 +156,8 @@ See `docs/architecture.md §12.4` and `§19`.
 
 ## 7. Connection states
 
+The authoritative definition, with every allowed transition, is `docs/state-machines.md §6`.
+
 | State          | Meaning                                                                                        |
 | -------------- | ---------------------------------------------------------------------------------------------- |
 | `CONNECTED`    | Authorization is valid and retrieval may use this account.                                     |
@@ -201,6 +214,20 @@ On disconnect:
 
 - stored credentials are deleted and revoked with Google,
 - **documents already retrieved from that account are kept.**
+
+Google revokes a *grant*, not one token: revoking any token for an account withdraws Muneem
+Ji's access to that account everywhere. When the same Google account is still connected to
+another Workspace, revoking would silently break that connection too. So the stored
+credentials are always deleted, and the grant is revoked with Google only when no other
+Gmail Connection still holds credentials for that account. When it is not revoked the user
+is told why, and where they can revoke it themselves.
+
+A revocation that fails — Google unreachable — does not stop the disconnect. The
+credentials are deleted regardless, and the user is told the revocation could not be
+confirmed.
+
+The connection record itself is kept, in `DISCONNECTED`. Connecting the same account again
+restores it (`docs/state-machines.md §6`).
 
 The second point matters. A retrieved invoice is now part of the business's financial
 records, and those records must not evaporate because a mailbox was disconnected. The

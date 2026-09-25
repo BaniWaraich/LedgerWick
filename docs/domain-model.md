@@ -22,7 +22,7 @@ The person using Muneem Ji to manage a business's financial records and invoices
 The Business Owner can:
 
 - create and manage Workspaces/Businesses,
-- connect Google Accounts,
+- connect Gmail accounts (Gmail Connections),
 - upload bank statements,
 - upload invoices,
 - review identified invoices,
@@ -66,7 +66,7 @@ Each Workspace/Business contains its own:
 - Invoices
 - Vendors
 - Subscriptions
-- connected Google Accounts
+- Gmail Connections
 - other financial records
 
 Data belonging to one Workspace must remain isolated from another Workspace belonging to the same User.
@@ -236,7 +236,7 @@ Examples include:
 - a scanned document
 - a photograph of a physical invoice
 - a multi-page invoice
-- an invoice document retrieved from Google Account/Gmail
+- an invoice document retrieved through a Gmail Connection
 - an invoice document manually uploaded by the Business Owner
 
 One Invoice may have multiple Invoice Documents.
@@ -294,15 +294,17 @@ The precise rules for identifying and maintaining a Subscription will be defined
 
 ---
 
-## 3.10 Google Account
+## 3.10 Gmail Connection
 
-A Google Account is an account connected by the Business Owner and authorized for Muneem Ji to search for and retrieve invoice documents.
+A Gmail Connection is a Google account connected by the Business Owner and authorized for Muneem Ji to search for and retrieve invoice documents. Earlier revisions called this a **Google Account**; see `docs/glossary.md`.
 
-For V1, Google Accounts are the only supported external source for automatically retrieving invoices.
+For V1, Gmail Connections are the only supported external source for automatically retrieving invoices.
 
-A Workspace may have one or more connected Google Accounts.
+A Workspace may have one or more Gmail Connections. Each belongs to exactly one Workspace, and the same Google account connected to two Workspaces is two Gmail Connections (`docs/workflows/connect-gmail.md §4`).
 
-Google Accounts are therefore part of the current domain model because they represent an established source of Invoice Documents in V1.
+A Gmail Connection outlives its credentials. Disconnecting deletes them and keeps the record, so that documents already retrieved from the account keep a provenance that points somewhere, and connecting the same account again restores the record rather than creating a second.
+
+Gmail Connections are part of the current domain model because they represent an established source of Invoice Documents in V1.
 
 ---
 
@@ -416,7 +418,7 @@ User
   │
   ├── has many → Workspaces / Businesses
   │
-  └── may connect/manage → Google Accounts
+  └── may connect/manage → Gmail Connections
 ```
 
 ```text
@@ -445,7 +447,7 @@ Workspace / Business
   │
   ├── has many → Business Knowledge entries
   │
-  └── connects → Google Accounts
+  └── connects → Gmail Connections
 ```
 
 ### Invoice ↔ Transaction
@@ -789,7 +791,7 @@ OCR failure, extraction failure, invoice-classification uncertainty, or automati
 
 ## Rule 11 — Duplicate invoice documents should not silently create duplicate invoices
 
-If the same underlying Invoice is retrieved from a Google Account and subsequently uploaded manually, Muneem Ji should recognize the possibility that both documents represent the same Invoice.
+If the same underlying Invoice is retrieved through a Gmail Connection and subsequently uploaded manually, Muneem Ji should recognize the possibility that both documents represent the same Invoice.
 
 The user should be able to review and resolve the duplicate.
 
@@ -903,7 +905,7 @@ Muneem Ji V1 currently models:
 - Invoice Documents
 - Vendors
 - Subscriptions
-- Google Accounts
+- Gmail Connections
 - Statement Lines and Canonical Transactions
 - Statement Coverage
 - Supporting Documents
@@ -926,4 +928,4 @@ Invoice
 Vendor
 ```
 
-with Invoice Documents representing the underlying Invoice and Google Accounts providing the current automated invoice-retrieval source.
+with Invoice Documents representing the underlying Invoice and Gmail Connections providing the current automated invoice-retrieval source.

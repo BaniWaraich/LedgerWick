@@ -60,6 +60,30 @@ build and keep correct. That is real work Clerk would have absorbed.
   > Amended rather than superseded because the decision this record makes — Auth.js with
   > Google — is untouched. Only a consequence of it was wrong.
 * Sign-up requests profile scopes only. **The Gmail scope is never requested at sign-up.**
+
+  > **Amended 2026-09-25, during Feature J.** The reasoning above assumed the Gmail grant
+  > would be obtained *through* Auth.js — a second `signIn` with the extra scope, stored in
+  > the adapter's `accounts` row. It cannot be, for reasons that are properties of Auth.js
+  > and of the spec rather than of taste:
+  >
+  > - `accounts` is keyed by (provider, Google `sub`) and belongs to a user.
+  >   `connect-gmail.md §4` requires one record *per Workspace*, with separate credentials,
+  >   for the same address connected to two Workspaces. One row cannot hold two grants.
+  > - The adapter writes tokens in plaintext; `connect-gmail.md §6` requires them encrypted.
+  > - Auth.js does nothing when an already-linked account signs in again, so a
+  >   reauthorization would never replace the stored token; and it throws
+  >   `OAuthAccountNotLinked` when the mailbox is some other user's sign-in account.
+  > - Linking a mailbox through `signIn` makes it a way to sign in as that user. Connecting
+  >   `finance@company.com` to read invoices must not let whoever holds that mailbox into
+  >   the owner's workspaces.
+  >
+  > So Gmail Connections have their own authorization-code flow, against the same Google
+  > OAuth client, with their own callback and their own workspace-scoped table
+  > (`gmail_connections`). Sign-in is untouched and still asks for profile and email only.
+  >
+  > The decision this record makes — Auth.js with Google — stands, and so does its
+  > deciding reason: we own the authorization request and can ask for `gmail.readonly`
+  > incrementally. What changed is only which code sends that request.
 * Google OAuth credentials are secrets: server-side only, never returned to the frontend,
   never logged (`docs/definition-of-done.md`).
 * Auth.js needs session storage. It uses the same Neon database through Drizzle, which
