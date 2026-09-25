@@ -21,6 +21,7 @@ import { sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
+  check,
   date,
   index,
   integer,
@@ -95,6 +96,12 @@ export const runStateEnum = pgEnum("run_state", ["RUNNING", "COMPLETED", "FAILED
 
 export const directionEnum = pgEnum("direction", ["DEBIT", "CREDIT"]);
 
+export const gmailConnectionStateEnum = pgEnum("gmail_connection_state", [
+  "CONNECTED",
+  "NEEDS_REAUTH",
+  "DISCONNECTED",
+]);
+
 /* ------------------------------------------------------------------ identity */
 
 /**
@@ -135,8 +142,9 @@ export const users = pgTable("users", {
 /**
  * The external identity behind a user. `providerAccountId` is the Google `sub`.
  *
- * Feature J stores the incremental `gmail.readonly` grant here. Feature A creates the
- * table and writes only the sign-in grant, whose scopes are profile and email.
+ * Holds the sign-in grant only, whose scopes are profile and email. The Gmail grant does
+ * **not** live here: it belongs to a workspace rather than a user, and is stored encrypted
+ * in `gmail_connections` below (docs/decisions/0006-authentication.md, amended).
  */
 export const accounts = pgTable(
   "accounts",
@@ -805,4 +813,65 @@ export const clarificationQuestions = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("clarification_questions_open_idx").on(t.workspaceId, t.answeredAt)],
+);
+
+/* ------------------------------------------------------------------ mail */
+
+/**
+ * One Google account a workspace has authorized us to read mail from.
+ *
+ * spec: docs/workflows/connect-gmail.md · states: docs/state-machines.md §6
+ *
+ * Keyed within the workspace by the Google `sub` rather than the address, because an
+ * address can change and a `sub` cannot. The same Google account connected to two
+ * workspaces is two rows with two ciphertexts (`connect-gmail.md §4`); nothing here is
+ * shared across workspaces.
+ *
+ * A row is never deleted by the application. Disconnecting nulls the credentials and
+ * leaves the row in `DISCONNECTED`, so documents retrieved through it keep a provenance that
+ * resolves, and connecting the same account again restores this row rather than adding a
+ * second -- the unique index makes that the only possible outcome.
+ *
+ * Only the refresh token is stored, and only encrypted (`src/gmail/crypto.ts`). Access
+ * tokens are minted from it when needed and never persisted: one long-lived secret at rest
+ * rather than two.
+ */
+export const gmailConnections = pgTable(
+  "gmail_connections",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    /** The Google `sub` claim of the account that was granted. */
+    googleSubject: text("google_subject").notNull(),
+    /** For display. Not an identity; see `googleSubject`. */
+    email: text("email").notNull(),
+    state: gmailConnectionStateEnum("state").notNull(),
+    /** As Google reported them on the last grant (`connect-gmail.md §11`). */
+    grantedScopes: text("granted_scopes").notNull(),
+    /** Null exactly when `DISCONNECTED`; see the check below. */
+    encryptedRefreshToken: text("encrypted_refresh_token"),
+    connectedAt: timestamp("connected_at", { withTimezone: true }).notNull(),
+    /** When retrieval last used this connection successfully. Written by feature K. */
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    disconnectedAt: timestamp("disconnected_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("gmail_connections_identity_idx").on(t.workspaceId, t.googleSubject),
+    index("gmail_connections_workspace_state_idx").on(t.workspaceId, t.state),
+    /*
+     * Credentials exist exactly when the connection is not DISCONNECTED.
+     *
+     * "Disconnecting deletes the stored credentials" (connect-gmail.md §6) is then a
+     * property of the table rather than of the code path that disconnects: no write can
+     * leave a disconnected row holding a token, or a live one without.
+     */
+    check(
+      "gmail_connections_credentials_check",
+      sql`(${t.state} = 'DISCONNECTED') = (${t.encryptedRefreshToken} IS NULL)`,
+    ),
+  ],
 );

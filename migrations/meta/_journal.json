@@ -85,6 +85,13 @@
       "when": 1790228812222,
       "tag": "0011_tense_loa",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790341238707,
+      "tag": "0012_curious_ghost_rider",
+      "breakpoints": true
     }
   ]
 }

@@ -31,6 +31,7 @@ import {
   businessKnowledge,
   canonicalTransactions,
   clarificationQuestions,
+  gmailConnections,
   invoiceDocuments,
   invoiceMatchCandidates,
   invoiceRequirements,
@@ -69,6 +70,7 @@ export const workspaceScopedTables = [
   reconciliationRuns,
   businessKnowledge,
   clarificationQuestions,
+  gmailConnections,
 ] as const;
 
 export type WorkspaceScopedTable = (typeof workspaceScopedTables)[number];
