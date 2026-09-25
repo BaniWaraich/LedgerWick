@@ -43,6 +43,24 @@ function configuredScope(): string {
   throw new Error("the google provider declares no scope; this test cannot verify it");
 }
 
+/** Every authorization parameter the provider declares, from wherever it keeps them. */
+function configuredParams(): Record<string, unknown> {
+  const provider = googleProvider as unknown as {
+    authorization?: Authorization;
+    options?: { authorization?: Authorization };
+  };
+
+  const merged: Record<string, unknown> = {};
+  for (const authorization of [provider.authorization, provider.options?.authorization]) {
+    if (typeof authorization === "string") {
+      for (const [k, v] of new URL(authorization).searchParams) merged[k] = v;
+    } else if (authorization?.params) {
+      Object.assign(merged, authorization.params);
+    }
+  }
+  return merged;
+}
+
 describe("the sign-in authorization request", () => {
   it("asks for profile and email only", () => {
     expect(configuredScope().split(" ").sort()).toEqual(["email", "openid", "profile"]);
@@ -56,6 +74,21 @@ describe("the sign-in authorization request", () => {
     // Every Restricted and Sensitive Google scope is a googleapis.com URL. Profile and
     // email are bare OIDC scopes, so any URL here is a scope Feature A must not ask for.
     expect(configuredScope()).not.toContain("googleapis.com");
+  });
+
+  it("does not fold in scopes granted since", () => {
+    // Feature J grants gmail.readonly to the same OAuth client. With
+    // include_granted_scopes, a later sign-in by the owner of a connected mailbox would
+    // come back carrying it -- and Auth.js writes that token, in plaintext, to `accounts`.
+    // Guards the guard: the params were found at all, or the assertion below is vacuous.
+    expect(configuredParams()).toHaveProperty("scope");
+    expect(configuredParams()).not.toHaveProperty("include_granted_scopes");
+  });
+
+  it("asks for no lasting access", () => {
+    // Sign-in needs to know who you are once. A refresh token here would be standing
+    // access nobody asked for, stored where feature J's encryption does not reach.
+    expect(configuredParams().access_type).not.toBe("offline");
   });
 
   it("declares the same scopes the provider is built from", () => {
