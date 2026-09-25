@@ -62,6 +62,7 @@ describe("the matcher", () => {
       "/workspaces",
       "/workspaces/new",
       "/statements/upload",
+      "/connections",
     ]) {
       expect(matches(path), `${path} is unprotected`).toBe(true);
     }

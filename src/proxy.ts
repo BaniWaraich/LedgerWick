@@ -36,5 +36,5 @@ export function proxy(request: NextRequest) {
 export const config = {
   // Only the authenticated areas. The landing page, /login and the Auth.js routes must
   // stay reachable signed out, and matching them here would be a redirect loop.
-  matcher: ["/home/:path*", "/workspaces/:path*", "/statements/:path*"],
+  matcher: ["/home/:path*", "/workspaces/:path*", "/statements/:path*", "/connections/:path*"],
 };

@@ -9,8 +9,8 @@
  * A route group, so `/home` keeps its URL.
  *
  * Follows wireframes/home_workspace. The navigation carries only what has been built:
- * the remaining items in that wireframe -- Connections, Matching, Exports -- arrive with
- * the features that own their routes, rather than as links to nothing.
+ * the remaining items in that wireframe -- Matching, Exports -- arrive with the features
+ * that own their routes, rather than as links to nothing.
  */
 
 import Link from "next/link";
@@ -66,6 +66,12 @@ export default async function WorkspaceLayout({ children }: { children: React.Re
               fact_check
             </span>
             Invoices needed
+          </Link>
+          <Link className={styles.navLink} href="/connections">
+            <span className="material-symbols-outlined" aria-hidden="true">
+              mail
+            </span>
+            Connections
           </Link>
         </nav>
 
