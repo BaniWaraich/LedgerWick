@@ -16,9 +16,11 @@
  * tracking. So the page shows the stages it can stand behind: the run is working, the run
  * is done, or the run needs help.
  *
- * ## What is not here yet
+ * ## The Excel download
  *
- * The Excel download is feature L's, and is not shown as a button to nothing.
+ * §9, feature L. Asking records an export and returns; the file is built in the background
+ * (`architecture.md §12B`), and this page shows the latest export's state from the database
+ * (`docs/state-machines.md §7`), polling while it is generating like it does for a run.
  *
  * ## The blocked prompt
  *
@@ -31,12 +33,14 @@
 import Link from "next/link";
 
 import { requireScope } from "../../../auth/workspace";
+import { latestExport } from "../../../export/exports";
 import { listConnections } from "../../../gmail/connections";
 import { currencyFor } from "../../../money/currencies";
 import { formatAmount } from "../../../money/format";
 import { blockedByMailbox, missingInvoiceReport, type QueueRow } from "../../../report/report";
 import { parseFilter, type Filter, type Summary } from "../../../report/summary";
 import { PollWhileProcessing } from "../statements/[batchId]/poll";
+import { requestExportAction } from "./actions";
 import styles from "./page.module.css";
 
 /** `docs/state-machines.md §2`, verbatim. What each state means to the person waiting. */
@@ -77,6 +81,7 @@ export default async function ReconciliationPage({
   );
   const waiting = await blockedByMailbox(scope);
   const accountedFor = needsReconnecting.some((connection) => waiting.has(connection.id));
+  const latest = run ? await latestExport(scope) : null;
 
   return (
     <div className={styles.page}>
@@ -111,6 +116,9 @@ export default async function ReconciliationPage({
           accounts={report.accounts.map((account) => account.name)}
         />
       ) : null}
+
+      {/* §4 and §9: offered once there is a reconciliation to export. */}
+      {run ? <ExportPanel latest={latest} /> : null}
 
       {/*
         §6: a broken connection is one prompt, not a row per requirement. connect-gmail §9
@@ -194,8 +202,8 @@ export default async function ReconciliationPage({
         </ol>
       )}
 
-      {/* Only while a run is actually moving; a finished run stops asking. */}
-      {run?.state === "RUNNING" ? <PollWhileProcessing /> : null}
+      {/* Only while something is actually moving; a finished run or export stops asking. */}
+      {run?.state === "RUNNING" || latest?.state === "GENERATING" ? <PollWhileProcessing /> : null}
     </div>
   );
 }
@@ -261,6 +269,54 @@ function SummaryPanel({
           {accounts.length > 0 ? ` · ${accounts.join(", ")}` : null}
         </p>
       ) : null}
+    </section>
+  );
+}
+
+/**
+ * §9. The complete reconciliation as a file, and where the latest one got to.
+ *
+ * Messages are `docs/state-machines.md §7`'s. A download is offered only for a READY
+ * export -- the only state with a file -- and a new one can always be asked for, because
+ * the file is a snapshot and the reconciliation may have moved since.
+ */
+function ExportPanel({ latest }: { latest: Awaited<ReturnType<typeof latestExport>> }) {
+  const generating = latest?.state === "GENERATING";
+
+  return (
+    <section className={styles.export} aria-label="Excel export">
+      <div className={styles.exportText}>
+        <p className={styles.exportTitle}>Excel reconciliation</p>
+        <p className={styles.exportBody}>
+          {latest?.state === "GENERATING"
+            ? "Preparing your Excel file…"
+            : latest?.state === "FAILED"
+              ? "We couldn't prepare this file. Please try again."
+              : latest?.state === "READY"
+                ? `Generated ${latest.completedAt?.toLocaleString("en-IN", {
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                  })} · ${latest.transactionCount} ${
+                    latest.transactionCount === 1 ? "transaction" : "transactions"
+                  }`
+                : "Every transaction, its status, and a link to its document."}
+        </p>
+      </div>
+      <div className={styles.exportActions}>
+        {latest?.state === "READY" ? (
+          <a className={styles.start} href={`/api/exports/${latest.id}`} download>
+            <span className="material-symbols-outlined" aria-hidden="true">
+              download
+            </span>
+            Download
+          </a>
+        ) : null}
+        <form action={requestExportAction}>
+          <button className={styles.exportRequest} type="submit" disabled={generating}>
+            {latest ? "Generate again" : "Generate Excel"}
+          </button>
+        </form>
+      </div>
     </section>
   );
 }

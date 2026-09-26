@@ -14,8 +14,10 @@
  */
 
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 
 import { requireScope } from "../../../auth/workspace";
+import { linkOrigin, requestExport } from "../../../export/exports";
 import { inngest, reconciliationRequested } from "../../../inngest/client";
 import { recordAnswer } from "../../../requirements/answer";
 
@@ -49,4 +51,31 @@ export async function answerQuestionAction(
   revalidatePath("/reconciliation");
 
   return {};
+}
+
+/**
+ * Ask for an Excel export of the whole reconciliation.
+ *
+ * `architecture.md §12B`: this records the request and returns. The file is built by the
+ * `generate-export` workflow; nothing here reads the reconciliation or writes a file, and
+ * the page shows the export's state from the database until it is ready.
+ *
+ * The link origin is this request's own (`docs/decisions/0017`): the browser's `Origin`
+ * header, which Next already checks against the host before running a server action.
+ */
+export async function requestExportAction(): Promise<void> {
+  const scope = await requireScope();
+  const incoming = await headers();
+  const origin =
+    linkOrigin(incoming.get("origin")) ??
+    linkOrigin(`${incoming.get("x-forwarded-proto") ?? "https"}://${incoming.get("host")}`);
+
+  // No origin means no link in the file could be right. Refusing is better than a file
+  // full of links to nowhere; a browser posting a form always sends one.
+  if (!origin) throw new Error("Cannot tell where this application is served from");
+
+  // Refused only before any run exists, and the page offers no button then.
+  await requestExport(scope, origin, (event) => inngest.send(event));
+
+  revalidatePath("/reconciliation");
 }

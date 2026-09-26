@@ -282,3 +282,50 @@
   background: var(--color-primary);
   border-color: var(--color-primary);
 }
+
+/* §9: the export. Beside the summary, because it is the summary taken away. */
+.export {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: var(--radius-lg);
+}
+
+.exportText {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.exportTitle {
+  font-weight: 600;
+}
+
+.exportBody {
+  color: var(--color-on-surface-variant);
+}
+
+.exportActions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.exportRequest {
+  padding: 0.625rem 1rem;
+  font: inherit;
+  font-weight: 600;
+  color: var(--color-primary);
+  background: transparent;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+}
+
+.exportRequest:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
