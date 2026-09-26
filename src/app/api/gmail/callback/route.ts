@@ -22,6 +22,7 @@ import {
   PENDING_COOKIE,
   PENDING_COOKIE_PATH,
 } from "../../../../gmail/connect-flow";
+import { inngest, retrievalRequested } from "../../../../inngest/client";
 import {
   GoogleOAuthError,
   googleOAuthClient,
@@ -60,6 +61,17 @@ export async function GET(request: Request): Promise<Response> {
   });
 
   if (outcome.kind === "failed") redirect(`/connections?error=${outcome.reason}`);
+
+  /*
+   * A mailbox now exists, or works again: search for what is waiting on one
+   * (`connect-gmail.md §9`). A queue that cannot be reached does not undo the connection --
+   * the next reconciliation run searches anyway -- so a failure here is not the user's.
+   */
+  try {
+    await inngest.send(retrievalRequested.create({ workspaceId: outcome.workspaceId, userId }));
+  } catch {
+    // Deliberately silent: see above.
+  }
 
   // Show the workspace the mailbox was connected to, even if another tab switched away.
   await activateWorkspace(outcome.workspaceId);

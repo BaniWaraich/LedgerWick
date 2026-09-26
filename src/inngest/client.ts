@@ -95,4 +95,28 @@ export const invoiceExtracted = eventType("invoice/extracted", {
   schema: workspaceEvent.extend({ invoiceId: z.uuid() }),
 });
 
+/**
+ * Search this workspace's mailboxes for every requirement still waiting on a document.
+ *
+ * Workspace-level, like `reconciliation/requested`, because the two things that make a
+ * search worth running are about the workspace: a reconciliation run finished, or a
+ * mailbox was (re)connected (`connect-gmail.md §9`: "Requirements that were `BLOCKED` on
+ * this account become eligible for retrieval again"). Which requirements that means is
+ * worked out when it runs, from their state, rather than carried in the payload.
+ */
+export const retrievalRequested = eventType("retrieval/requested", {
+  schema: workspaceEvent,
+});
+
+/**
+ * Search for one requirement's document.
+ *
+ * One event per requirement, for the reason `statement/uploaded` gives per file: a mailbox
+ * that fails for one search must not take every other requirement down with it, and each
+ * gets its own retries and its own recorded outcome.
+ */
+export const requirementRetrievalRequested = eventType("retrieval/requirement", {
+  schema: workspaceEvent.extend({ requirementId: z.uuid() }),
+});
+
 export const inngest = new Inngest({ id: "ledgerwick" });

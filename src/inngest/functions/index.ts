@@ -10,6 +10,8 @@ import { identifyRequirementsFunction } from "./identify-requirements";
 import { identifyStatementFunction } from "./identify-statement";
 import { matchInvoiceFunction } from "./match-invoice";
 import { parseStatementFunction } from "./parse-statement";
+import { requestRetrievalFunction } from "./request-retrieval";
+import { retrieveDocumentsFunction } from "./retrieve-documents";
 import { understandDocumentFunction } from "./understand-document";
 
 export const functions = [
@@ -17,5 +19,7 @@ export const functions = [
   identifyStatementFunction,
   matchInvoiceFunction,
   parseStatementFunction,
+  requestRetrievalFunction,
+  retrieveDocumentsFunction,
   understandDocumentFunction,
 ];

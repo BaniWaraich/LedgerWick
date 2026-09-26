@@ -151,6 +151,7 @@ not listed here.
 | From                                              | Event                                              | To             |
 | ------------------------------------------------- | -------------------------------------------------- | -------------- |
 | `IDENTIFIED`, `NOT_FOUND`, `BLOCKED`, `FAILED`    | a search starts                                    | `SEARCHING`    |
+| `SEARCHING`                                       | a search restarts after an infrastructure retry    | `SEARCHING`    |
 | `SEARCHING`                                       | documents were fetched                             | `EVALUATING`   |
 | `SEARCHING`                                       | nothing worth fetching, every mailbox searched     | `NOT_FOUND`    |
 | `SEARCHING`                                       | nothing worth fetching, a mailbox needs reconnecting | `BLOCKED`    |

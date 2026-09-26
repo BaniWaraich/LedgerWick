@@ -211,6 +211,19 @@ export async function accessTokenFor(
 }
 
 /**
+ * Retrieval read this mailbox successfully (`connect-gmail.md §11`: "When it was last used
+ * successfully"). Conditional on the connection still being `CONNECTED`, so a search that
+ * finishes after the user disconnected cannot make the account look alive.
+ */
+export async function markUsed(scope: WorkspaceScope, id: string, at: Date): Promise<void> {
+  await scope.update(
+    gmailConnections,
+    { lastUsedAt: at },
+    and(byId(id), eq(gmailConnections.state, "CONNECTED")),
+  );
+}
+
+/**
  * What happened to the Google grant when a connection was disconnected.
  *
  * - `revoked`: Google no longer honours it.

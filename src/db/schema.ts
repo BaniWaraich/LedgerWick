@@ -102,6 +102,19 @@ export const gmailConnectionStateEnum = pgEnum("gmail_connection_state", [
   "DISCONNECTED",
 ]);
 
+/** Not states: what one mailbox search and one fetch came to. docs/state-machines.md §2. */
+export const mailboxSearchOutcomeEnum = pgEnum("mailbox_search_outcome", [
+  "COMPLETED",
+  "NEEDS_REAUTH",
+  "FAILED",
+]);
+
+export const fetchOutcomeEnum = pgEnum("fetch_outcome", [
+  "FETCHED",
+  "NO_ATTACHMENT",
+  "MESSAGE_GONE",
+]);
+
 /* ------------------------------------------------------------------ identity */
 
 /**
@@ -873,5 +886,112 @@ export const gmailConnections = pgTable(
       "gmail_connections_credentials_check",
       sql`(${t.state} = 'DISCONNECTED') = (${t.encryptedRefreshToken} IS NULL)`,
     ),
+  ],
+);
+
+/**
+ * One search of one mailbox for one requirement: where retrieval looked, and what happened.
+ *
+ * spec: docs/workflows/retrieve-invoices.md §5, §16, §17 · docs/workflows/invoice-match-review.md §4
+ * decision: docs/decisions/0016-retrieval-proposes-settle-decides.md
+ *
+ * A search that found nothing leaves no candidate behind, so without this row "we couldn't
+ * find this one" could not say whether three mailboxes were searched across two weeks or
+ * none ever was. It is also what names the account a `BLOCKED` requirement is waiting on.
+ *
+ * The latest search per requirement and mailbox, replaced on each run: the unique index
+ * makes a retry land on the same row rather than add a second.
+ */
+export const mailboxSearches = pgTable(
+  "mailbox_searches",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    requirementId: uuid("requirement_id")
+      .notNull()
+      .references(() => invoiceRequirements.id, { onDelete: "cascade" }),
+    /**
+     * No cascade: a connection row is never deleted by the application, and what was
+     * searched must keep resolving. `no action` rather than `restrict` so that deleting a
+     * whole workspace, which cascades to both tables, is checked at the end of the statement
+     * rather than refused halfway through it.
+     */
+    gmailConnectionId: uuid("gmail_connection_id")
+      .notNull()
+      .references(() => gmailConnections.id),
+    windowStart: date("window_start").notNull(),
+    windowEnd: date("window_end").notNull(),
+    outcome: mailboxSearchOutcomeEnum("outcome").notNull(),
+    messagesFound: integer("messages_found").notNull().default(0),
+    /** A pass hit its cap, so what was found is not everything that matched. */
+    truncated: boolean("truncated").notNull().default(false),
+    searchedAt: timestamp("searched_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("mailbox_searches_identity_idx").on(t.requirementId, t.gmailConnectionId),
+    // The blocked banner asks which accounts requirements are waiting on.
+    index("mailbox_searches_outcome_idx").on(t.workspaceId, t.outcome),
+  ],
+);
+
+/**
+ * A message a search found that might carry the document a requirement needs.
+ *
+ * spec: docs/workflows/retrieve-invoices.md §9, §21 · docs/workflows/connect-gmail.md §5
+ * decision: docs/decisions/0016-retrieval-proposes-settle-decides.md
+ *
+ * Headers only. There is no column here for a body or a snippet, and there must never be
+ * one: `connect-gmail.md §5` keeps message content out of storage, and the cheapest way to
+ * keep that true is for the table to have nowhere to put it.
+ *
+ * `evidence` is facts, never a score -- the same rule `invoice_match_candidates` follows
+ * (`0011`), for the same reason: the review screen shows the user why a message was
+ * considered, and a number cannot be un-summed into a reason.
+ *
+ * Not a Match Candidate. That proposes a transaction for an invoice; this proposes a
+ * message for a requirement (docs/glossary.md).
+ */
+export const candidateEmails = pgTable(
+  "candidate_emails",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    requirementId: uuid("requirement_id")
+      .notNull()
+      .references(() => invoiceRequirements.id, { onDelete: "cascade" }),
+    gmailConnectionId: uuid("gmail_connection_id")
+      .notNull()
+      .references(() => gmailConnections.id),
+    /** Gmail's id for the message. Differs between two mailboxes holding the same mail. */
+    gmailMessageId: text("gmail_message_id").notNull(),
+    /** The RFC 822 Message-ID header. The same across mailboxes, when the sender set one. */
+    rfc822MessageId: text("rfc822_message_id"),
+    fromHeader: text("from_header").notNull(),
+    subject: text("subject").notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull(),
+    /**
+     * Which search pass found it: VENDOR or KEYWORD. `text` for the reason
+     * `invoice_match_candidates.model_verdict` gives -- a record of how, not a state.
+     */
+    foundBy: text("found_by").notNull(),
+    /** The observable facts that put this message here. Never a score. */
+    evidence: jsonb("evidence").notNull(),
+    selected: boolean("selected").notNull().default(false),
+    /** What fetching it produced. Null when it was not fetched. */
+    fetchOutcome: fetchOutcomeEnum("fetch_outcome"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // One row per message per mailbox per requirement. A retry cannot double it.
+    uniqueIndex("candidate_emails_identity_idx").on(
+      t.requirementId,
+      t.gmailConnectionId,
+      t.gmailMessageId,
+    ),
+    index("candidate_emails_requirement_idx").on(t.workspaceId, t.requirementId),
   ],
 );
