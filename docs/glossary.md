@@ -243,6 +243,27 @@ answer may become Business Knowledge.
 
 ---
 
+## Mail
+
+### Gmail Connection
+
+One Google account a Workspace has authorized Muneem Ji to read mail from, together with
+the credentials that authorization produced and the state of its health
+(`docs/state-machines.md §6`).
+
+Belongs to exactly one Workspace. A Workspace may hold several, one per Google account,
+and the same Google account connected to two Workspaces is two Gmail Connections with two
+sets of credentials — never one shared between them. A Gmail Connection is identified
+within its Workspace by the Google account's stable subject identifier, not its address.
+
+Not the same thing as the Google identity a User signs in with. Signing in proves who the
+User is and asks for no access to mail; a Gmail Connection grants access to mail and proves
+nothing about who is signed in. The two may be the same Google account, and are still two
+different things. Where earlier documents say **Google Account** meaning a mailbox the
+system searches, they mean this.
+
+---
+
 ## Deprecated terms
 
 Do not use these; they appear in earlier revisions of the documents.

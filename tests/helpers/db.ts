@@ -85,6 +85,26 @@ export async function expectUniqueViolation(
   fn: () => Promise<unknown>,
   constraint?: string,
 ): Promise<void> {
+  await expectViolation(fn, "23505", "unique_violation", constraint);
+}
+
+/**
+ * Assert that a write violated a check constraint: SQLSTATE 23514, pinned to the named
+ * constraint for the same reason `expectUniqueViolation` pins its index.
+ */
+export async function expectCheckViolation(
+  fn: () => Promise<unknown>,
+  constraint: string,
+): Promise<void> {
+  await expectViolation(fn, "23514", "check_violation", constraint);
+}
+
+async function expectViolation(
+  fn: () => Promise<unknown>,
+  code: string,
+  label: string,
+  constraint?: string,
+): Promise<void> {
   let error: unknown;
   try {
     await fn();
@@ -92,7 +112,7 @@ export async function expectUniqueViolation(
     error = e;
   }
 
-  if (!error) throw new Error("expected a unique violation, but the write succeeded");
+  if (!error) throw new Error(`expected a ${label}, but the write succeeded`);
 
   // The driver error is on `cause`; PGlite and postgres-js both expose code/constraint.
   const pg = ((error as { cause?: unknown }).cause ?? error) as {
@@ -101,9 +121,9 @@ export async function expectUniqueViolation(
     constraint?: string;
   };
 
-  if (pg.code !== "23505") {
+  if (pg.code !== code) {
     throw new Error(
-      `expected SQLSTATE 23505 (unique_violation), got ${pg.code ?? "no code"}: ${String(error)}`,
+      `expected SQLSTATE ${code} (${label}), got ${pg.code ?? "no code"}: ${String(error)}`,
     );
   }
 

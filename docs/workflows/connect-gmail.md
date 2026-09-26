@@ -85,6 +85,17 @@ Treat CASA as a fixed cost of the Gmail path, not as a variable to design around
 Note also that `readonly` is a superset of `metadata`. Requesting both grants `readonly`;
 the token can read message bodies whatever else is asked for alongside it.
 
+### What the request contains
+
+The connection flow asks for exactly `openid`, `email` and `gmail.readonly`. The first two
+are identity, not mail: they say *which* Google account was granted, so the connection can
+be recorded against that account's stable subject identifier rather than an address that
+can change. Nothing else is requested, and earlier grants are not folded in.
+
+Google lets the user untick the mail permission on the consent screen. A grant that comes
+back without `gmail.readonly` is not a connection: nothing is recorded, and the user is told
+that Ledgerwick cannot search their mail without it.
+
 ### Limiting what our code sees
 
 Since the scope cannot be narrowed, the narrowing has to happen in our own code.
@@ -107,31 +118,13 @@ headers rather than the full text of a business's correspondence. That is worth 
 its own terms — but it is not a substitute for the assessment, and must not be described as
 one.
 
-**OPEN DECISION** — whether to use the Gmail API at all.
+**Decided — the Gmail API, with OAuth.** See `docs/decisions/0015-gmail-api-with-casa.md`.
 
-_Option A — Gmail API with OAuth (assumed by this document)._ Reads existing mail, including
-everything already in the mailbox. Requires CASA: a third-party audit, a real cost, and
-weeks of lead time. Standard, recognizable consent flow.
-
-_Option B — auto-forwarding to an address Muneem Ji controls._ The user sets a Gmail filter
-forwarding invoice-like mail to a per-workspace address; we ingest by SMTP/webhook. No
-OAuth, no Restricted scope, no CASA.
-
-Option B looks cheaper and probably is not, for one reason that may be decisive:
-**forwarding is prospective.** It cannot see mail that already exists. The product's primary
-flow is uploading past statements and finding the documents for them, which is retroactive
-by definition — so Option B cannot serve it at all, only the steady state afterwards.
-
-It also changes what we are: holding a mailbox rather than reading one, which replaces the
-assessment with an inbound-mail security burden of our own (spoofing, unsolicited mail,
-retention of content nobody reviewed) and a fragile setup step the user performs inside
-Gmail and can silently break.
-
-The recommendation is **Option A**, accepting CASA as a cost of the product, with Option B
-reconsidered only as a later addition for users who refuse OAuth.
-
-This must be settled before launch. It does not block development, which proceeds against a
-test account under an unverified app.
+Auto-forwarding to an address Muneem Ji controls was considered and rejected as the primary
+path: **forwarding is prospective.** It cannot see mail that already exists, and the
+product's primary flow — uploading past statements and finding the documents for them — is
+retroactive by definition. It may be reconsidered later as an addition for users who refuse
+OAuth. CASA is accepted as a cost of the product.
 
 ### What the user is told
 
@@ -162,6 +155,8 @@ See `docs/architecture.md §12.4` and `§19`.
 ---
 
 ## 7. Connection states
+
+The authoritative definition, with every allowed transition, is `docs/state-machines.md §6`.
 
 | State          | Meaning                                                                                        |
 | -------------- | ---------------------------------------------------------------------------------------------- |
@@ -219,6 +214,20 @@ On disconnect:
 
 - stored credentials are deleted and revoked with Google,
 - **documents already retrieved from that account are kept.**
+
+Google revokes a *grant*, not one token: revoking any token for an account withdraws Muneem
+Ji's access to that account everywhere. When the same Google account is still connected to
+another Workspace, revoking would silently break that connection too. So the stored
+credentials are always deleted, and the grant is revoked with Google only when no other
+Gmail Connection still holds credentials for that account. When it is not revoked the user
+is told why, and where they can revoke it themselves.
+
+A revocation that fails — Google unreachable — does not stop the disconnect. The
+credentials are deleted regardless, and the user is told the revocation could not be
+confirmed.
+
+The connection record itself is kept, in `DISCONNECTED`. Connecting the same account again
+restores it (`docs/state-machines.md §6`).
 
 The second point matters. A retrieved invoice is now part of the business's financial
 records, and those records must not evaporate because a mailbox was disconnected. The

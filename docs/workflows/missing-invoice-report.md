@@ -178,8 +178,10 @@ the user and a batch of results.
 [Reconnect]
 ```
 
-Until Gmail connections exist (feature J), nothing records which connection a requirement
-is blocked on, so the prompt states the count and not the account.
+Each Gmail Connection in `NEEDS_REAUTH` is named in its own prompt, with the Reconnect
+that fixes it (`docs/workflows/connect-gmail.md §9`). Until retrieval (feature K) records
+which connection a requirement is blocked on, the count of blocked requirements is stated
+for the workspace as a whole rather than per account.
 
 ---
 

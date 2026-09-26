@@ -15,7 +15,13 @@ import { InvalidWorkspaceNameError, WorkspaceAccessError } from "../../db/worksp
 
 export type WorkspaceFormState = { error: string | null };
 
-/** Create a workspace and go to it. The owner is the session's user, not a form field. */
+/**
+ * Create a workspace and go to it. The owner is the session's user, not a form field.
+ *
+ * Lands on connecting a mailbox, the onboarding prompt of `connect-gmail.md §3 A`. It is
+ * skippable there: a business that never connects one can still upload statements and
+ * invoices by hand.
+ */
 export async function createWorkspaceAction(
   _previous: WorkspaceFormState,
   formData: FormData,
@@ -29,7 +35,7 @@ export async function createWorkspaceAction(
     throw error;
   }
 
-  redirect("/home");
+  redirect("/connections?welcome=1");
 }
 
 /**

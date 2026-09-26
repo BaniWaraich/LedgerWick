@@ -283,7 +283,64 @@ Three rules that are properties of this machine rather than of any workflow:
 
 ---
 
-## 6. Retired state names
+## 6. Gmail Connection
+
+The health of one Google account's authorization to be read, within one Workspace
+(`docs/workflows/connect-gmail.md §7`).
+
+```text
+(first grant) ──→ CONNECTED ⇄ NEEDS_REAUTH
+                      ↓            ↓
+                  DISCONNECTED ←───┘
+                      ↓ (granted again: the same record)
+                  CONNECTED
+```
+
+| State          | Meaning                                                                                        |
+| -------------- | ---------------------------------------------------------------------------------------------- |
+| `CONNECTED`    | Authorization is valid and retrieval may use this account.                                     |
+| `NEEDS_REAUTH` | The grant expired or was revoked. Retrieval cannot use this account until the user reconnects. |
+| `DISCONNECTED` | The user removed the connection. Credentials deleted.                                          |
+
+None is terminal. Every state can be left by the user acting.
+
+| From                        | Event                          | To             |
+| --------------------------- | ------------------------------ | -------------- |
+| — (no record yet)           | granted                        | `CONNECTED`    |
+| `CONNECTED`                 | granted (reconnected)          | `CONNECTED`    |
+| `NEEDS_REAUTH`              | granted (reconnected)          | `CONNECTED`    |
+| `DISCONNECTED`              | granted (connected again)      | `CONNECTED`    |
+| `CONNECTED`                 | Google reports the grant invalid | `NEEDS_REAUTH` |
+| `CONNECTED`, `NEEDS_REAUTH` | the user disconnects           | `DISCONNECTED` |
+
+Anything not in this table is refused. In particular:
+
+- **`DISCONNECTED` never becomes `NEEDS_REAUTH`.** It holds no credentials, so there is no
+  grant for Google to call invalid.
+- **Only an invalid grant produces `NEEDS_REAUTH`.** Rate limiting, timeouts and 5xx
+  responses are transient and leave the state alone (`connect-gmail.md §8`). A connection
+  must never be marked broken because Google was briefly unavailable.
+- **A grant always lands on the existing record** for that Google account in that
+  Workspace, whatever state it is in. Reconnecting restores; it never creates a second.
+
+`DISCONNECTED` is a state rather than a deleted row on purpose: documents retrieved through
+the connection keep a provenance that points at something, and connecting the same account
+again restores the record rather than starting a new history.
+
+The database holds credentials exactly when the state is not `DISCONNECTED`. That is a
+constraint, not a convention.
+
+### User-facing messages
+
+| State          | Message          |
+| -------------- | ---------------- |
+| `CONNECTED`    | Connected        |
+| `NEEDS_REAUTH` | Reconnect needed |
+| `DISCONNECTED` | Disconnected     |
+
+---
+
+## 7. Retired state names
 
 These appear in earlier revisions of the workflow documents. They map onto the above.
 

@@ -3,8 +3,8 @@
  *
  * Still close to empty: the reconciliation surfaces the wireframe shows belong to the
  * features that own them, and building them here as placeholders would be inventing
- * product. What it offers is the two things that now work end to end — getting statements
- * in, and seeing what they turned out to need documents for.
+ * product. What it offers is what now works end to end — getting statements in, seeing
+ * what they turned out to need documents for, and connecting a mailbox to find them in.
  */
 
 import Link from "next/link";
@@ -21,14 +21,17 @@ export default async function HomePage() {
     <header className={styles.header}>
       <h1 className={styles.title}>Welcome back</h1>
       <p className={styles.subtitle}>
-        Upload your bank statements and we&rsquo;ll work out which payments need a document.
-        Connecting a mailbox arrives with a later feature.
+        Upload your bank statements and we&rsquo;ll work out which payments need a document. Connect
+        your Gmail so we can look for those documents in your mail.
       </p>
       <Link className={styles.action} href="/statements/upload">
         Upload statements
       </Link>
       <Link className={styles.secondaryAction} href="/reconciliation">
         See what needs invoices
+      </Link>
+      <Link className={styles.secondaryAction} href="/connections">
+        Connect Gmail
       </Link>
     </header>
   );

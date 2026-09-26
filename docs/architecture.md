@@ -51,7 +51,7 @@ The database records authoritative domain state such as:
 - invoice documents
 - vendors
 - subscriptions
-- Google accounts
+- Gmail connections
 - processing states
 - reconciliation relationships
 
@@ -248,7 +248,7 @@ User
       │     └── Invoice Documents
       ├── Vendors
       ├── Subscriptions
-      └── Google Accounts
+      └── Gmail Connections
 ```
 
 The system also has important integrity constraints.
@@ -307,7 +307,7 @@ It stores:
 - invoice documents and their metadata
 - vendors
 - subscriptions
-- Google account metadata
+- Gmail connections, with their credentials encrypted
 - processing state
 - reconciliation state
 - persisted business knowledge
@@ -1039,7 +1039,7 @@ Every operation involving:
 - vendors
 - subscriptions
 - bank accounts
-- Google accounts
+- Gmail connections
 
 must be authorized against the relevant workspace.
 
