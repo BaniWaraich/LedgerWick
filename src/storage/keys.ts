@@ -22,8 +22,11 @@
  */
 export type DocumentKey = string & { readonly __documentKey: unique symbol };
 
-/** The two kinds of document this system stores, and the schema table each belongs to. */
-export type DocumentKind = "statements" | "documents";
+/**
+ * The kinds of object this system stores, each belonging to one schema table:
+ * `bank_statements`, `supporting_documents`, and `reconciliation_exports`.
+ */
+export type DocumentKind = "statements" | "documents" | "exports";
 
 /** Anything that cannot appear in a path segment we construct. */
 const UNSAFE_SEGMENT = /[^a-zA-Z0-9._-]+/g;

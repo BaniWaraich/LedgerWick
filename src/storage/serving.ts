@@ -13,10 +13,11 @@
  * route stays a thin adapter and the isolation test can attack this function directly.
  */
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
-import { bankStatements, supportingDocuments } from "../db/schema";
+import { bankStatements, reconciliationExports, supportingDocuments } from "../db/schema";
 import type { WorkspaceScope } from "../db/workspace-scope";
+import { XLSX_MIME } from "../export/exports";
 import type { DocumentStore } from "./document-store";
 
 /**
@@ -48,12 +49,16 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  *
  * `filename` comes from the database row rather than from the object, so what the user
  * saves is the name they uploaded, not the suffixed storage key.
+ *
+ * Inline for documents, which are previewed in the app (invoice-match-review §5); an
+ * attachment for an export, which is a file to save and has nothing to preview.
  */
 async function streamObject(
   store: DocumentStore,
   storageRef: string,
   mimeType: string,
   filename: string,
+  disposition: "inline" | "attachment" = "inline",
 ): Promise<Response> {
   const object = await store.get(storageRef);
 
@@ -65,9 +70,8 @@ async function streamObject(
     headers: {
       "Content-Type": mimeType,
       "Content-Length": String(object.size),
-      // Inline: these are previewed in the app (invoice-match-review §5). The quoted
-      // filename is sanitized because it is user-supplied and lands in a header.
-      "Content-Disposition": `inline; filename="${filename.replace(/["\r\n]/g, "")}"`,
+      // The quoted filename is sanitized because it is user-supplied and lands in a header.
+      "Content-Disposition": `${disposition}; filename="${filename.replace(/["\r\n]/g, "")}"`,
       // A document is private to one workspace; no shared cache may hold it.
       "Cache-Control": "private, no-store",
     },
@@ -103,4 +107,27 @@ export async function serveSupportingDocument(
   if (!document) return notFound();
 
   return streamObject(store, document.storageRef, document.mimeType, document.filename);
+}
+
+/**
+ * A generated Excel export (`docs/decisions/0017`).
+ *
+ * Only a `READY` export is served. One still generating, or one that failed, has no file,
+ * and answers exactly as a missing or foreign one does: the page offers downloads only for
+ * exports that are ready, so anything else reaching here is a stale link or a guess.
+ */
+export async function serveExport(
+  scope: WorkspaceScope,
+  store: DocumentStore,
+  exportId: string,
+): Promise<Response> {
+  if (!UUID.test(exportId)) return notFound();
+
+  const requested = await scope.selectOne(
+    reconciliationExports,
+    and(eq(reconciliationExports.id, exportId), eq(reconciliationExports.state, "READY")),
+  );
+  if (!requested?.storageRef) return notFound();
+
+  return streamObject(store, requested.storageRef, XLSX_MIME, requested.filename, "attachment");
 }

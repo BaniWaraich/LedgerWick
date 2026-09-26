@@ -130,4 +130,22 @@ export const retrievalFetched = eventType("retrieval/fetched", {
   schema: workspaceEvent.extend({ requirementId: z.uuid() }),
 });
 
+/**
+ * Build the Excel snapshot of this workspace's reconciliation.
+ *
+ * `architecture.md §12B`: the request records that an export was asked for and returns;
+ * the file is built here, in the background, because a workspace with tens of thousands of
+ * transactions cannot be exported inside an HTTP request.
+ *
+ * `origin` is where the file's links point (`docs/decisions/0017`). It is taken from the
+ * request that asked, and only ever becomes link text in that user's own file -- so it is
+ * held to http(s) and nothing more.
+ */
+export const exportRequested = eventType("export/requested", {
+  schema: workspaceEvent.extend({
+    exportId: z.uuid(),
+    origin: z.url({ protocol: /^https?$/ }),
+  }),
+});
+
 export const inngest = new Inngest({ id: "ledgerwick" });
