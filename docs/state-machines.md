@@ -142,6 +142,61 @@ something to assess that there was not before.
 in the Missing Invoice Report's action queue, and both lead to `RESOLVED` once the user
 acts. `NOT_FOUND` may also be reached again by a later Reconciliation Run.
 
+### Transitions made by retrieval
+
+The diagram above shows the main path. Gmail retrieval (`docs/workflows/retrieve-invoices.md`,
+`docs/decisions/0016`) also needs the edges below, all of them. It makes no transition that is
+not listed here.
+
+| From                                              | Event                                              | To             |
+| ------------------------------------------------- | -------------------------------------------------- | -------------- |
+| `IDENTIFIED`, `NOT_FOUND`, `BLOCKED`, `FAILED`    | a search starts                                    | `SEARCHING`    |
+| `SEARCHING`                                       | documents were fetched                             | `EVALUATING`   |
+| `SEARCHING`                                       | nothing worth fetching, every mailbox searched     | `NOT_FOUND`    |
+| `SEARCHING`                                       | nothing worth fetching, a mailbox needs reconnecting | `BLOCKED`    |
+| `EVALUATING`                                      | settled: one document on strong evidence           | `RESOLVED`     |
+| `EVALUATING`                                      | settled: plausible, not strong enough              | `NEEDS_REVIEW` |
+| `EVALUATING`                                      | settled: nothing plausible, every mailbox searched | `NOT_FOUND`    |
+| `EVALUATING`                                      | settled: nothing plausible, a mailbox unsearched   | `BLOCKED`      |
+| `SEARCHING`, `EVALUATING`                         | infrastructure failure, retries exhausted          | `FAILED`       |
+
+Why each entry into `SEARCHING` exists:
+
+- **`NOT_FOUND → SEARCHING`**: each new Reconciliation Run searches again, because invoices
+  arrive late. Documents the user rejected are never offered again.
+- **`BLOCKED → SEARCHING`**: happens when the user reconnects the mailbox that was blocking
+  it (`connect-gmail.md §9`).
+- **`FAILED → SEARCHING`**: happens on the next run. `FAILED` is retryable by definition.
+
+A requirement with no mailbox to search — none was ever connected, or every one is
+`DISCONNECTED` — stays `IDENTIFIED`. Connecting a mailbox is optional (`connect-gmail.md §3`),
+so not having one is not `BLOCKED`.
+
+No retrieval write ever touches a requirement that already has a resolution method. That is
+the same guard `src/matching/link.ts` uses.
+
+### Mailbox search outcome
+
+A field on each Mailbox Search, one per requirement per Gmail Connection. It records what
+happened when that mailbox was searched for that requirement. It is not a state; nothing moves
+through it.
+
+| Outcome        | Meaning                                                                 |
+| -------------- | ----------------------------------------------------------------------- |
+| `COMPLETED`    | The mailbox was searched over the whole window.                         |
+| `NEEDS_REAUTH` | The mailbox could not be searched until the user reconnects it.         |
+| `FAILED`       | The mailbox could not be searched because of an infrastructure failure. |
+
+### Fetch outcome
+
+A field on each Candidate Email. Null means it was not selected for fetching.
+
+| Outcome         | Meaning                                                              |
+| --------------- | -------------------------------------------------------------------- |
+| `FETCHED`       | At least one attachment was stored as a Supporting Document.         |
+| `NO_ATTACHMENT` | The message had no attachment the system retrieves (PDF, in V1).     |
+| `MESSAGE_GONE`  | The message no longer existed when it was fetched.                   |
+
 ### Resolution method
 
 A separate field on a `RESOLVED` requirement, recording how the link was established.
