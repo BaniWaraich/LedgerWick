@@ -227,7 +227,49 @@ The user can download the complete reconciliation, not merely the unresolved row
 matched, not found, needs review, and transactions needing no document.
 
 The export reflects the state at the moment it is generated. Resolving an item and
-re-downloading produces an updated file.
+re-downloading produces an updated file. The earlier file does not change: each export is its
+own snapshot (`docs/state-machines.md §7`).
+
+Like the report, the export is offered once a Reconciliation Run exists (§4).
+
+### What the file contains
+
+`docs/decisions/0017` records why.
+
+**One row per Canonical Transaction** in the Workspace. The file is complete, so it includes
+the transactions §7 keeps out of the queue. A requirement's row is placed by the same rule as
+the §5 summary, so the file and the report never disagree.
+
+| Column          | Contents                                                                          |
+| --------------- | --------------------------------------------------------------------------------- |
+| Date            | The transaction's value date.                                                     |
+| Account         | Bank name and account identifier.                                                 |
+| Description     | As the bank printed it.                                                           |
+| Direction       | Debit or Credit.                                                                  |
+| Amount          | A number, in the currency's major units.                                          |
+| Currency        | ISO 4217 code.                                                                    |
+| Vendor          | Who the payment appears to be to, where identification said.                      |
+| Document needed | See below.                                                                        |
+| Status          | The §5 line the requirement is counted in; empty when there is no requirement.    |
+| How resolved    | For a matched requirement, how the link was established.                          |
+| Reason          | Why a document is believed to be needed.                                          |
+| Document        | A link to the document's page in Muneem Ji, labelled with its filename; empty when there is none. |
+
+**Document needed** says only what the system knows:
+
+| Transaction                                     | Document needed                    |
+| ----------------------------------------------- | ---------------------------------- |
+| Has a requirement, not `NOT_REQUIRED`           | Yes                                |
+| Requirement resolved `NOT_REQUIRED`             | No — marked by you                 |
+| No requirement, open Clarification Question     | Waiting for your answer            |
+| No requirement                                  | No document identified as needed   |
+
+The last line does not say "no document needed". A transaction with no requirement may be
+one that identification never finished judging (`docs/decisions/0014`, Consequences). The
+export does not claim a judgement nobody made.
+
+A second sheet repeats the §5 summary, together with the time the file was generated and the
+latest Run's date and coverage, so the file can be checked against itself.
 
 ### Document references in the export
 

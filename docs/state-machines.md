@@ -398,7 +398,42 @@ constraint, not a convention.
 
 ---
 
-## 7. Retired state names
+## 7. Reconciliation Export
+
+The generation of one Excel snapshot of the reconciliation
+(`docs/workflows/missing-invoice-report.md §9`, `docs/decisions/0017`).
+
+```text
+GENERATING → READY
+     ↘
+      FAILED
+```
+
+| State        | Terminal | Meaning                                                                        |
+| ------------ | -------- | ------------------------------------------------------------------------------ |
+| `GENERATING` | no       | Requested. The background workflow is reading the reconciliation and building the file. |
+| `READY`      | yes      | The file is stored and can be downloaded. It never changes again.             |
+| `FAILED`     | yes      | The workflow's retries were exhausted. No file is offered.                     |
+
+A file exists to download exactly when the state is `READY`. The database enforces this: a
+storage reference is present if and only if the export is `READY`.
+
+**`FAILED` is terminal for that export.** Inngest's retries handle transient failures before
+this state is reached. After that, trying again means requesting a new export, which is a new
+snapshot of the state at that moment. An earlier export is never regenerated, because an
+export that changed after it was made would no longer be a snapshot.
+
+### User-facing messages
+
+| State        | Message                                         |
+| ------------ | ----------------------------------------------- |
+| `GENERATING` | Preparing your Excel file…                      |
+| `READY`      | Download                                        |
+| `FAILED`     | We couldn't prepare this file. Please try again. |
+
+---
+
+## 8. Retired state names
 
 These appear in earlier revisions of the workflow documents. They map onto the above.
 

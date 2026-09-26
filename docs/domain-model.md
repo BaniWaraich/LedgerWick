@@ -381,6 +381,19 @@ new rather than reprocessing everything the business has ever uploaded.
 A Run is a record of work performed. It is not a source of truth about the current state
 of any Invoice Requirement — the requirement itself holds that.
 
+### Reconciliation Export
+
+A Reconciliation Export is the Excel file a user downloads, and the record of making it.
+It belongs to one Workspace and records:
+
+- who requested it, and when,
+- its state (`docs/state-machines.md §7`),
+- once `READY`: the storage reference of the file and how many transactions it holds.
+
+It is derived data. It is never a source of truth about anything it contains, and it is
+never updated to reflect later state. Its contents are fixed by
+`docs/workflows/missing-invoice-report.md §9` and `docs/decisions/0017`.
+
 ---
 
 ## 3.14 Business Knowledge
