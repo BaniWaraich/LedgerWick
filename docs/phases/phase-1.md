@@ -550,6 +550,38 @@ failure yields `BLOCKED`, transient failure retries, and neither is confused wit
 Re-running produces no duplicate documents or requirements. Candidates and their evidence are
 persisted so review can display them.
 
+**Functionally met.** `docs/decisions/0016` records how, and why retrieval proposes documents
+and one settle step decides the requirement. Four things need reading precisely:
+
+- **"Metadata only" is structural.** `src/gmail/mail.ts` is the only file that calls the
+  Gmail API. `attachmentsOf` is its one full-format request, and runs only for selected
+  messages. `tests/gmail/boundary.test.ts` holds both rules, and `tests/gmail/mail.test.ts`
+  asserts the requests themselves. The boundary test had not been seeing URLs at all — its
+  comment stripper read `https://` as a comment — and now does.
+- **No new model call.** Every judgement is F's reader or G's adjudicator. Nothing from Gmail
+  reaches a model except an attachment's bytes.
+- **Two decisions were settled with the developer on 2026-09-26.**
+  - A retrieved document that is not an invoice is never linked automatically; it goes to
+    review or is recorded.
+  - Each run searches again for `NOT_FOUND` requirements.
+
+  `retrieve-invoices.md §11.1` and `state-machines.md §2` say so.
+- **HTML-only receipts are out of reach**, and are an OPEN DECISION in
+  `retrieve-invoices.md §20A`.
+
+**Quality is a separate bar, and it does not gate this feature** — the same split D, F and G
+carry. The policy is measured in the suite: a labelled set of messy mailboxes under a model
+that agrees with everything, with zero false positives. The models on real mail are not
+measured yet. That bar is six consecutive unseen requirements retrieved correctly on first
+attempt, it gates **Phase 1**, and `docs/retrieval-acceptance.md` holds the criteria and the
+log. `BAN-149` (credit) and `BAN-157` (a labelled test mailbox) are what it waits on. The CASA
+demo video, which starts the verification clock (§1), can be filmed once both are done.
+
+`docs/decisions/0012` asked that `IDENTIFIED` in the action queue be revisited once retrieval
+landed. It stays. A workspace with no mailbox connected keeps its requirements there, waiting
+for an upload. With a mailbox, `IDENTIFIED` is momentary, because retrieval starts when
+identification completes.
+
 ---
 
 ### L. Excel Export

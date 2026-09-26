@@ -47,7 +47,7 @@ import {
 import type { WorkspaceScope } from "../db/workspace-scope";
 import { generateCandidates, type Candidate } from "./candidates";
 import type { AdjudicateMatch, JudgeSameInvoice } from "./contracts";
-import { decideOutcome, type Adjudication } from "./decide";
+import { decideOutcome, type Adjudication, type Outcome } from "./decide";
 import { describeAll, toStored, type InvoiceFacts } from "./evidence";
 import { findDuplicate, flagDuplicate } from "./duplicates";
 import { linkInvoice } from "./link";
@@ -249,14 +249,7 @@ export async function matchInvoice(
       : { outcome: "NEEDS_REVIEW", transactionId: null, candidates: 0, reason: linked.reason };
   }
 
-  const duplicate = await findDuplicate(scope, invoice, {
-    judge: deps.judgeSameInvoice,
-    vendorName: facts.vendorName,
-  });
-
-  if (duplicate !== null) await flagDuplicate(scope, invoiceId, duplicate);
-
-  const { candidates, truncated } = await generateCandidates(scope, { ...facts, documentId });
+  const { duplicate, candidates, truncated } = await shortlist(scope, loaded, deps);
 
   /*
    * The one requirement this run is entitled to move.
@@ -281,21 +274,13 @@ export async function matchInvoice(
   try {
     await setRequirementState(scope, anchor, "EVALUATING");
 
-    const adjudication = await adjudicate(deps, facts, candidates);
-
-    await recordCandidates(scope, invoiceId, candidates, truncated, adjudication);
-
-    const decision = decideOutcome({
-      // The in-memory evidence, with amounts still `bigint`. The policy compares them, and
-      // the stored form is text -- `toStored` is for the column, not for deciding.
-      candidates: candidates.map((candidate) => ({
-        rank: candidate.rank,
-        evidence: candidate.evidence,
-      })),
-      adjudication,
-      suspectedDuplicate: duplicate !== null,
-      truncated,
-    });
+    const { decision } = await judge(
+      scope,
+      invoiceId,
+      facts,
+      { duplicate, candidates, truncated },
+      deps,
+    );
 
     if (decision.kind === "AUTO_MATCH") {
       const chosen = candidates[decision.rank];
@@ -363,6 +348,106 @@ export async function matchInvoice(
     if (before !== null) await setRequirementState(scope, anchor, before);
     throw error;
   }
+}
+
+type Loaded = NonNullable<Awaited<ReturnType<typeof load>>>;
+
+/** What narrowing produced, before anything is judged or recorded. */
+interface Shortlist {
+  readonly duplicate: Awaited<ReturnType<typeof findDuplicate>>;
+  readonly candidates: Candidate[];
+  readonly truncated: boolean;
+}
+
+/**
+ * The duplicate check and the candidate set.
+ *
+ * Duplicates first: an invoice that is a second copy of one already on file must not be
+ * auto-linked to anything, so the flag is written before anything could be.
+ */
+async function shortlist(
+  scope: WorkspaceScope,
+  loaded: Loaded,
+  deps: MatchDeps,
+): Promise<Shortlist> {
+  const { invoice, facts, documentId } = loaded;
+
+  const duplicate = await findDuplicate(scope, invoice, {
+    judge: deps.judgeSameInvoice,
+    vendorName: facts.vendorName,
+  });
+
+  if (duplicate !== null) await flagDuplicate(scope, invoice.id, duplicate);
+
+  const { candidates, truncated } = await generateCandidates(scope, { ...facts, documentId });
+
+  return { duplicate, candidates, truncated };
+}
+
+/** Ask the model, record the candidate set, and apply the policy. Writes candidates only. */
+async function judge(
+  scope: WorkspaceScope,
+  invoiceId: string,
+  facts: InvoiceFacts,
+  list: Shortlist,
+  deps: MatchDeps,
+): Promise<{ adjudication: Adjudication | null; decision: Outcome }> {
+  const adjudication = await adjudicate(deps, facts, list.candidates);
+
+  await recordCandidates(scope, invoiceId, list.candidates, list.truncated, adjudication);
+
+  const decision = decideOutcome({
+    // The in-memory evidence, with amounts still `bigint`. The policy compares them, and
+    // the stored form is text -- `toStored` is for the column, not for deciding.
+    candidates: list.candidates.map((candidate) => ({
+      rank: candidate.rank,
+      evidence: candidate.evidence,
+    })),
+    adjudication,
+    suspectedDuplicate: list.duplicate !== null,
+    truncated: list.truncated,
+  });
+
+  return { adjudication, decision };
+}
+
+/** What matching made of one invoice, without acting on it. */
+export interface Proposal {
+  readonly candidates: readonly Candidate[];
+  readonly suspectedDuplicate: boolean;
+  readonly adjudication: Adjudication | null;
+  readonly decision: Outcome;
+}
+
+/**
+ * Work out which payment an invoice was for, and record the working-out -- but link
+ * nothing and move no requirement.
+ *
+ * `docs/decisions/0016`: a document retrieved for a requirement is judged here like any
+ * other, and then settled by retrieval alongside every other document found for the same
+ * payment. Two invoices that each look perfect for one payment are one ambiguous question,
+ * and only a step that sees both can say so. `matchInvoice` would have linked whichever
+ * finished first.
+ *
+ * Null when there is no such invoice in this workspace.
+ */
+export async function proposeMatch(
+  scope: WorkspaceScope,
+  invoiceId: string,
+  deps: MatchDeps,
+): Promise<Proposal | null> {
+  const loaded = await load(scope, invoiceId);
+  if (loaded === null) return null;
+
+  const list = await shortlist(scope, loaded, deps);
+  const { adjudication, decision } = await judge(scope, invoiceId, loaded.facts, list, deps);
+
+  return {
+    candidates: list.candidates,
+    suspectedDuplicate: list.duplicate !== null,
+    adjudication,
+    decision,
+  };
 }
 
 /**

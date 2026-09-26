@@ -43,21 +43,45 @@ import { eq, inArray } from "drizzle-orm";
 
 import {
   bankAccounts,
+  candidateEmailDocuments,
+  candidateEmails,
   canonicalTransactions,
+  gmailConnections,
   invoiceDocuments,
   invoiceMatchCandidates,
   invoiceRequirements,
   invoices,
+  mailboxSearches,
   supportingDocuments,
   vendors,
 } from "../db/schema";
 import type { WorkspaceScope } from "../db/workspace-scope";
 import { describeAll, fromStored } from "../matching/evidence";
+import { describeAllEmail, type EmailEvidence } from "../retrieval/evidence";
 import { compareInvoices, type DuplicateComparison } from "./duplicates";
+
+/**
+ * Where a retrieved candidate came from: the email, as its headers describe it.
+ *
+ * Headers only -- the sender, the subject, the mailbox -- because that is all retrieval
+ * ever kept (`connect-gmail.md §5`). `evidence` is why the email was looked at, as
+ * sentences; the document's own evidence is on the candidate beside it.
+ */
+export interface CandidateMail {
+  readonly from: string;
+  readonly subject: string;
+  readonly mailbox: string;
+  readonly evidence: string[];
+}
 
 /** One document proposed for this payment, with the case for it. */
 export interface ReviewCandidate {
-  readonly invoiceId: string;
+  /**
+   * The invoice read from the document. Null for a retrieved document nobody could read:
+   * it is still worth showing (`docs/decisions/0016`), and choosing it links the document
+   * directly (`domain-model.md §5.1`).
+   */
+  readonly invoiceId: string | null;
   readonly documentId: string;
   readonly filename: string;
   /** GMAIL or MANUAL_UPLOAD — §5 shows the user where a candidate came from. */
@@ -73,6 +97,17 @@ export interface ReviewCandidate {
   readonly modelReason: string | null;
   /** Served through the authorized route; the page never learns a storage key. */
   readonly previewHref: string;
+  /** The email it arrived in, when retrieval found it. */
+  readonly mail: CandidateMail | null;
+}
+
+/** One mailbox retrieval searched for this requirement, and what came of it. */
+export interface SearchedMailbox {
+  readonly email: string;
+  readonly windowStart: string;
+  readonly windowEnd: string;
+  /** Searched completely, or could not be (`docs/state-machines.md §2`). */
+  readonly outcome: "COMPLETED" | "NEEDS_REAUTH" | "FAILED";
 }
 
 /** What the system did, so "we found nothing" is informative rather than a shrug. */
@@ -82,8 +117,8 @@ export interface WhatWeDid {
   readonly rejectedPreviously: number;
   /** The bounded read hit its cap, so the shortlist was not everything. */
   readonly truncated: boolean;
-  /** Mailboxes searched. Empty until features J and K exist. */
-  readonly searchedMailboxes: string[];
+  /** Mailboxes retrieval searched for this payment. Empty when none is connected. */
+  readonly searchedMailboxes: SearchedMailbox[];
 }
 
 export interface ReviewContext {
@@ -139,29 +174,101 @@ function primaryDocuments(
 }
 
 /**
- * The primary document of every candidate currently proposed for this payment.
+ * The documents retrieval fetched for one requirement, with the email each came from.
+ *
+ * Read from the rows retrieval wrote -- Candidate Emails and their documents -- and never
+ * from Gmail: `§12`, "this workflow performs no searching, retrieval, or matching". A
+ * document reached through two mailboxes keeps the first email found for it.
+ */
+async function retrievedMail(
+  scope: WorkspaceScope,
+  requirementId: string,
+): Promise<Map<string, CandidateMail>> {
+  const emails = await scope.select(
+    candidateEmails,
+    eq(candidateEmails.requirementId, requirementId),
+  );
+  if (emails.length === 0) return new Map();
+
+  const [joins, connections] = await Promise.all([
+    scope.select(
+      candidateEmailDocuments,
+      inArray(
+        candidateEmailDocuments.candidateEmailId,
+        emails.map((email) => email.id),
+      ),
+    ),
+    scope.select(gmailConnections),
+  ]);
+
+  const emailById = new Map(emails.map((email) => [email.id, email]));
+  const mailboxById = new Map(connections.map((c) => [c.id, c.email]));
+  const byDocument = new Map<string, CandidateMail>();
+
+  for (const join of [...joins].sort((a, b) =>
+    a.candidateEmailId.localeCompare(b.candidateEmailId),
+  )) {
+    const email = emailById.get(join.candidateEmailId);
+    if (email === undefined || byDocument.has(join.documentId)) continue;
+    byDocument.set(join.documentId, {
+      from: email.fromHeader,
+      subject: email.subject,
+      mailbox: mailboxById.get(email.gmailConnectionId) ?? "a disconnected mailbox",
+      evidence: describeAllEmail(email.evidence as EmailEvidence[]),
+    });
+  }
+
+  return byDocument;
+}
+
+/**
+ * Retrieved documents worth showing that matching never proposed, because no invoice was
+ * read from them: `UNREADABLE`, and not already attached to a payment. `0016` offers these
+ * rather than dropping them, since the user can open the file and see. A document read as
+ * `NOT_AN_INVOICE` is not offered, as settled with the user.
+ */
+async function unreadableRetrieved(
+  scope: WorkspaceScope,
+  mail: ReadonlyMap<string, CandidateMail>,
+): Promise<(typeof supportingDocuments.$inferSelect)[]> {
+  const ids = [...mail.keys()];
+  if (ids.length === 0) return [];
+
+  const documents = await scope.select(supportingDocuments, inArray(supportingDocuments.id, ids));
+  return documents
+    .filter(
+      (document) => document.state === "UNREADABLE" && document.canonicalTransactionId === null,
+    )
+    .sort((a, b) => a.id.localeCompare(b.id));
+}
+
+/**
+ * The primary document of every candidate currently proposed for this payment, including
+ * the retrieved documents shown without an invoice.
  *
  * Shared with `resolve.ts` so that what the screen showed and what a rejection records can
  * never drift apart: "none of these is right" has to mean the set the user was looking at.
  */
 export async function candidateDocumentIds(
   scope: WorkspaceScope,
-  transactionId: string,
+  requirement: { id: string; canonicalTransactionId: string },
 ): Promise<string[]> {
   const rows = await scope.select(
     invoiceMatchCandidates,
-    eq(invoiceMatchCandidates.canonicalTransactionId, transactionId),
+    eq(invoiceMatchCandidates.canonicalTransactionId, requirement.canonicalTransactionId),
   );
 
   const invoiceIds = [...new Set(rows.map((row) => row.invoiceId))];
-  if (invoiceIds.length === 0) return [];
+  const joins =
+    invoiceIds.length === 0
+      ? []
+      : await scope.select(invoiceDocuments, inArray(invoiceDocuments.invoiceId, invoiceIds));
 
-  const joins = await scope.select(
-    invoiceDocuments,
-    inArray(invoiceDocuments.invoiceId, invoiceIds),
-  );
+  const unreadable = await unreadableRetrieved(scope, await retrievedMail(scope, requirement.id));
 
-  return [...new Set(primaryDocuments(joins).values())];
+  return [
+    ...new Set([...primaryDocuments(joins).values(), ...unreadable.map((document) => document.id)]),
+  ];
 }
 
 /**
@@ -252,6 +359,8 @@ export async function reviewContext(
       : scope.select(vendors, inArray(vendors.id, vendorIds)),
   ]);
 
+  const mail = await retrievedMail(scope, requirement.id);
+
   const invoiceById = new Map(proposed.map((invoice) => [invoice.id, invoice]));
   const documentById = new Map(documents.map((document) => [document.id, document]));
   const vendorById = new Map(vendorRows.map((vendor) => [vendor.id, vendor]));
@@ -295,6 +404,32 @@ export async function reviewContext(
       evidence: describeAll(fromStored(row.evidence)),
       modelReason: row.modelReason,
       previewHref: `/api/documents/${documentId}`,
+      mail: mail.get(documentId) ?? null,
+    });
+  }
+
+  let unreadableShown = 0;
+  for (const document of await unreadableRetrieved(scope, mail)) {
+    if (rejected.has(document.id)) {
+      rejectedPreviously += 1;
+      continue;
+    }
+    unreadableShown += 1;
+    candidates.push({
+      invoiceId: null,
+      documentId: document.id,
+      filename: document.filename,
+      source: document.source,
+      vendorName: null,
+      invoiceNumber: null,
+      invoiceDate: null,
+      totalMinor: null,
+      currency: null,
+      // `manual-invoice-upload.md §11`'s sentence: details, not text.
+      evidence: ["We couldn't read the details from this document"],
+      modelReason: null,
+      previewHref: `/api/documents/${document.id}`,
+      mail: mail.get(document.id) ?? null,
     });
   }
 
@@ -374,13 +509,35 @@ export async function reviewContext(
     },
     duplicate,
     whatWeDid: {
-      candidatesConsidered: rows.length,
+      candidatesConsidered: rows.length + unreadableShown,
       rejectedPreviously,
       truncated: rows.some((row) => row.truncated),
-      // Nothing records a search, because retrieval is features J and K. Saying "no
-      // mailboxes" is honest; inventing a window would not be.
-      searchedMailboxes: [],
+      searchedMailboxes: await searchedMailboxes(scope, requirement.id),
     },
     candidates,
   };
+}
+
+/** What retrieval recorded about each mailbox it searched for this requirement. */
+async function searchedMailboxes(
+  scope: WorkspaceScope,
+  requirementId: string,
+): Promise<SearchedMailbox[]> {
+  const searches = await scope.select(
+    mailboxSearches,
+    eq(mailboxSearches.requirementId, requirementId),
+  );
+  if (searches.length === 0) return [];
+
+  const connections = await scope.select(gmailConnections);
+  const emailById = new Map(connections.map((c) => [c.id, c.email]));
+
+  return searches
+    .map((search) => ({
+      email: emailById.get(search.gmailConnectionId) ?? "a disconnected mailbox",
+      windowStart: search.windowStart,
+      windowEnd: search.windowEnd,
+      outcome: search.outcome,
+    }))
+    .sort((a, b) => a.email.localeCompare(b.email));
 }

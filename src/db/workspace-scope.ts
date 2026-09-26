@@ -29,6 +29,8 @@ import {
   bankAccounts,
   bankStatements,
   businessKnowledge,
+  candidateEmailDocuments,
+  candidateEmails,
   canonicalTransactions,
   clarificationQuestions,
   gmailConnections,
@@ -36,6 +38,7 @@ import {
   invoiceMatchCandidates,
   invoiceRequirements,
   invoices,
+  mailboxSearches,
   reconciliationRuns,
   statementLines,
   supportingDocuments,
@@ -71,6 +74,9 @@ export const workspaceScopedTables = [
   businessKnowledge,
   clarificationQuestions,
   gmailConnections,
+  mailboxSearches,
+  candidateEmails,
+  candidateEmailDocuments,
 ] as const;
 
 export type WorkspaceScopedTable = (typeof workspaceScopedTables)[number];

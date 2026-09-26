@@ -66,9 +66,20 @@ export async function resolveRequirementAction(
 
   switch (decision) {
     case "CONFIRM": {
+      /*
+       * A candidate is chosen by its invoice where one was read from it, which also teaches
+       * the alias (§9). A retrieved document nobody could read has no invoice, so it is
+       * chosen by the document itself and linked directly (`domain-model.md §5.1`).
+       */
       const invoiceId = String(formData.get("invoiceId") ?? "");
-      if (invoiceId === "") return { error: "Choose the document this payment was for." };
-      outcome = await confirmCandidate(scope, requirementId, invoiceId);
+      const candidateDocumentId = String(formData.get("candidateDocumentId") ?? "");
+      if (invoiceId !== "") {
+        outcome = await confirmCandidate(scope, requirementId, invoiceId);
+      } else if (candidateDocumentId !== "") {
+        outcome = await linkExistingDocument(scope, requirementId, candidateDocumentId);
+      } else {
+        return { error: "Choose the document this payment was for." };
+      }
       break;
     }
     case "LINK_EXISTING": {

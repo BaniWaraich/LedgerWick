@@ -149,7 +149,10 @@ describe("reading a review that is not yours", () => {
   it("leaks no document, no vendor and no storage key", async () => {
     const { attacker, transaction, document } = await twoWorkspaces();
 
-    const ids = await candidateDocumentIds(attacker, transaction.id);
+    const ids = await candidateDocumentIds(attacker, {
+      id: INVENTED,
+      canonicalTransactionId: transaction.id,
+    });
     const linkable = await linkableDocuments(attacker);
 
     expect(ids).toEqual([]);

@@ -46,6 +46,7 @@ function candidate(overrides: Partial<ReviewCandidate> = {}): ReviewCandidate {
     invoiceDate: "2026-04-14",
     totalMinor: 2000n,
     currency: "USD",
+    mail: null,
     evidence: [
       "Amount matches exactly",
       "Dated the same day as the transaction",
@@ -134,6 +135,40 @@ describe("the outcomes the screen offers", () => {
     expect(submitted).toHaveLength(1);
     expect(submitted[0].get("decision")).toBe("CONFIRM");
     expect(submitted[0].get("invoiceId")).toBe("11111111-1111-4111-8111-111111111111");
+  });
+
+  it("sends a retrieved document nobody could read by the document itself", () => {
+    // No invoice was read from it, so it is linked directly (domain-model §5.1).
+    const { getByText } = renderForm({
+      candidates: [candidate({ invoiceId: null, vendorName: null, invoiceNumber: null })],
+    });
+
+    fireEvent.click(getByText("This is the one"));
+
+    expect(submitted[0].get("decision")).toBe("CONFIRM");
+    expect(submitted[0].get("invoiceId")).toBe("");
+    expect(submitted[0].get("candidateDocumentId")).toBe("22222222-2222-4222-8222-222222222222");
+  });
+
+  it("shows the email a retrieved document came in, and why it was read", () => {
+    // §5: "From: receipts@anthropic.com" -- headers, never the message.
+    const { container } = renderForm({
+      candidates: [
+        candidate({
+          source: "GMAIL",
+          mail: {
+            from: "Receipts <receipts@anthropic.com>",
+            subject: "Your receipt from Anthropic",
+            mailbox: "accounts@business.in",
+            evidence: ["Sent from receipts@anthropic.com, the vendor's own address"],
+          },
+        }),
+      ],
+    });
+
+    expect(container.textContent).toContain("From: Receipts <receipts@anthropic.com>");
+    expect(container.textContent).toContain("found in accounts@business.in");
+    expect(container.textContent).toContain("the vendor's own address");
   });
 
   it("pre-binds the upload link to this payment", () => {

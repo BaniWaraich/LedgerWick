@@ -168,7 +168,7 @@ export async function rejectAllCandidates(
   const requirement = await openRequirement(scope, requirementId);
   if (requirement === null) return NOTHING_TO_DO;
 
-  const shown = await candidateDocumentIds(scope, requirement.canonicalTransactionId);
+  const shown = await candidateDocumentIds(scope, requirement);
   if (shown.length === 0) {
     return { resolved: false, reason: "There is nothing here to reject." };
   }

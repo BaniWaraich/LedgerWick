@@ -262,6 +262,35 @@ nothing about who is signed in. The two may be the same Google account, and are 
 different things. Where earlier documents say **Google Account** meaning a mailbox the
 system searches, they mean this.
 
+### Mailbox Search
+
+One search of one Gmail Connection's mailbox for one Invoice Requirement. It records:
+
+- the date window searched,
+- how many messages were found,
+- whether the result hit its cap,
+- an outcome: `COMPLETED`, `NEEDS_REAUTH` or `FAILED` (`docs/state-machines.md §2`).
+
+It exists so that "we couldn't find this one" can say where the system looked. A search that
+found nothing leaves no Candidate Email behind, so without this record the system could not
+show that the search happened (`docs/workflows/invoice-match-review.md §4`).
+
+Only the latest search per requirement and mailbox is kept.
+
+### Candidate Email
+
+A message found by a Mailbox Search that might carry the Supporting Document an Invoice
+Requirement needs. It holds:
+
+- the message's headers — sender, subject, date — never its body;
+- the evidence that put it there, as facts rather than a score;
+- whether it was selected for fetching, and what fetching it produced.
+
+A Candidate Email is a proposal about a *message*. The documents fetched from it are ordinary
+Supporting Documents, and they go through classification, extraction and matching like any
+other. It is not a Match Candidate: a Match Candidate proposes a transaction for an Invoice.
+See `docs/decisions/0011` and `0016`.
+
 ---
 
 ## Deprecated terms

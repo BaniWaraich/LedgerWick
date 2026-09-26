@@ -57,9 +57,10 @@ import type { WorkspaceScope } from "../db/workspace-scope";
  *
  * `NOT_REQUIRED` is deliberately absent: it is not a way a link came to be, because there
  * is no link. `resolveWithoutDocument` writes it and takes no method argument.
- * `AUTO_RETRIEVED` arrives with feature K.
+ * `AUTO_RETRIEVED` is Gmail retrieval's, written by its settle step when one retrieved
+ * document is linked on strong evidence (`docs/decisions/0016`).
  */
-export type LinkMethod = "AUTO_MATCHED" | "USER_CONFIRMED" | "USER_LINKED";
+export type LinkMethod = "AUTO_RETRIEVED" | "AUTO_MATCHED" | "USER_CONFIRMED" | "USER_LINKED";
 
 export type LinkOutcome =
   | { readonly linked: true; readonly requirementResolved: boolean }

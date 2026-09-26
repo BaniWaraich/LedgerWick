@@ -111,6 +111,13 @@ it, so it is worth nothing unless it is enforced here:
   fetch may be made.
 - Message bodies are never persisted and never sent to an LLM. Candidate evaluation
   operates on headers, attachment filenames, and the attachment itself.
+- `format=METADATA` returns headers and a `snippet`, and no part tree. So:
+  - filenames cannot be read at search time. The query itself asks for
+    `has:attachment filename:pdf`, a filter Gmail applies without the system reading a body;
+  - filenames are read after selection, from the full-format part tree. The Gmail module
+    discards all body data before returning it;
+  - `snippet` is a fragment of the body. It is dropped inside the Gmail module and never
+    returned, stored or shown.
 - A test asserts that the search path issues no full-format request.
 
 The benefit is blast radius, not compliance: a bug or a compromise in retrieval exposes

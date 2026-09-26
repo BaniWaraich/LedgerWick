@@ -23,11 +23,17 @@ import { describe, expect, it } from "vitest";
 const ROOT = join(import.meta.dirname, "../..");
 const SRC = join(ROOT, "src");
 
-/** A file's code, with comments removed — these names are discussed in prose throughout. */
+/**
+ * A file's code, with comments removed — these names are discussed in prose throughout.
+ *
+ * A line comment is `//` not preceded by a colon. Without that, the `//` in `https://` read
+ * as the start of a comment, and every URL in the codebase was invisible to the checks
+ * below that look for one.
+ */
 function codeOf(path: string): string {
   return readFileSync(path, "utf8")
     .replace(/\/\*[\s\S]*?\*\//g, " ")
-    .replace(/\/\/[^\n]*/g, " ");
+    .replace(/(?<!:)\/\/[^\n]*/g, " ");
 }
 
 function sourceFiles(dir: string, acc: string[] = []): string[] {
@@ -119,6 +125,7 @@ describe("gmail credentials", () => {
       "src/gmail/oauth.ts",
       "src/gmail/connections.ts",
       "src/gmail/connect-flow.ts",
+      "src/gmail/mail.ts",
     ];
 
     for (const path of secretHolders) {
@@ -128,24 +135,50 @@ describe("gmail credentials", () => {
 });
 
 describe("google's endpoints", () => {
-  it("are called from one file", () => {
-    // connect-gmail §12: Gmail specifics stay behind one boundary. In feature J that is
-    // the OAuth module; feature K's mail access joins it inside src/gmail.
-    const google = /googleapis\.com|accounts\.google\.com/;
+  it("are called from the gmail module and sign-in only", () => {
+    // connect-gmail §12: Gmail specifics stay behind one boundary.
+    // The font stylesheet in the root layout is a Google host and not an API.
+    const google = /(?<!fonts\.)googleapis\.com|accounts\.google\.com/;
+    const allowed = ["src/gmail/oauth.ts", "src/gmail/mail.ts", "src/auth/google.ts"];
     const offenders = files
-      .filter((f) => f.path !== "src/gmail/oauth.ts" && f.path !== "src/auth/google.ts")
+      .filter((f) => !allowed.includes(f.path))
       .filter((f) => google.test(f.code))
       .map((f) => f.path);
 
     expect(offenders).toEqual([]);
   });
 
-  it("do not yet include the gmail api", () => {
-    // Feature J connects; it does not read mail. The first request to the Gmail API is
-    // feature K's, and arrives with K's own test that search uses metadata only.
-    expect(files.filter((f) => /gmail\.googleapis\.com/.test(f.code)).map((f) => f.path)).toEqual(
-      [],
-    );
+  it("include the gmail api in exactly one file", () => {
+    // connect-gmail §5: "Gmail access goes through one module, and that module is the only
+    // place a full-format fetch may be made."
+    expect(files.filter((f) => /gmail\.googleapis\.com/.test(f.code)).map((f) => f.path)).toEqual([
+      "src/gmail/mail.ts",
+    ]);
+  });
+});
+
+describe("retrieval", () => {
+  it("searches without any way to read a message's contents", () => {
+    // connect-gmail §5: the search path issues no full-format request. Structurally: the
+    // file that searches does not import the functions that read contents.
+    const search = files.find((f) => f.path === "src/retrieval/search.ts");
+    expect(search?.code).toBeDefined();
+    expect(search?.code).not.toMatch(/attachmentsOf|downloadAttachment/);
+  });
+
+  it("asks for full format in one place only", () => {
+    const full = files.filter((f) => /["']full["']/.test(f.code)).map((f) => f.path);
+    expect(full).toEqual(["src/gmail/mail.ts"]);
+  });
+
+  it("never reaches a model", () => {
+    // docs/decisions/0016: retrieval searches and fetches; models are the assessor's. The
+    // split is what keeps mail and credentials out of any module that builds a prompt.
+    const offenders = files
+      .filter((f) => f.path.startsWith("src/retrieval/") && reachesModels(f.code))
+      .map((f) => f.path);
+
+    expect(offenders).toEqual([]);
   });
 });
 
@@ -154,5 +187,8 @@ describe("these checks", () => {
     // Guards the guard: a broken path filter would make every test above pass vacuously.
     expect(files.filter((f) => inGmail(f.path)).length).toBeGreaterThanOrEqual(4);
     expect(files.some((f) => reachesModels(f.code))).toBe(true);
+    // And the URL checks can see a URL at all, which they once could not.
+    expect(files.some((f) => /googleapis\.com/.test(f.code))).toBe(true);
+    expect(files.some((f) => f.path.startsWith("src/retrieval/"))).toBe(true);
   });
 });

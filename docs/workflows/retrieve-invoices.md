@@ -283,9 +283,23 @@ Retrieved document
                                       → document linked to the transaction as evidence
 ```
 
-Both outcomes resolve the Invoice Requirement. Only the first creates an Invoice, and so
+Either outcome can resolve the Invoice Requirement. Only the first creates an Invoice, so
 only the first is subject to the one-to-one Invoice ↔ Transaction rule. See
 `docs/domain-model.md §5.1`.
+
+**Only the first can resolve it automatically.** A document that is not an invoice has
+nothing extracted from it: no vendor, no amount, no date. Linking it automatically would rest
+on nothing more than an email's sender and subject, and `docs/decisions/0011` refuses to link
+on less than a full conjunction of evidence. So:
+
+- a document classified `UNCERTAIN`, or one that is `UNREADABLE`, is put in front of the user
+  in Match Review (`NEEDS_REVIEW`), who can preview it and confirm it;
+- a document classified `NOT_AN_INVOICE` is kept and recorded against the email it came
+  from. It is not offered as a candidate.
+
+Settled with the user on 2026-09-26; see `docs/decisions/0016`. The user resolving a
+requirement with a payment confirmation is still the second branch above. Only the automatic
+path is closed.
 
 A document that cannot be read at all still resolves nothing on its own, but it remains
 stored and available to the user.
@@ -551,7 +565,9 @@ Duplicate transaction detection and canonical transaction creation are separate 
 Retrieval does not have a state model of its own. It advances the state of the **Invoice
 Requirement**, which is defined in `docs/state-machines.md §2`.
 
-Retrieval moves a requirement `IDENTIFIED → SEARCHING → EVALUATING`, and from there to:
+Retrieval moves a requirement `IDENTIFIED → SEARCHING → EVALUATING`, and from there to the
+outcomes below. The full list of transitions, including the searches repeated from
+`NOT_FOUND`, `BLOCKED` and `FAILED`, is in `docs/state-machines.md §2`.
 
 - `RESOLVED` — a document was confidently associated (section 12),
 - `NEEDS_REVIEW` — candidates exist but cannot be resolved automatically (section 13),
@@ -561,6 +577,22 @@ Retrieval moves a requirement `IDENTIFIED → SEARCHING → EVALUATING`, and fro
 
 `NEEDS_REVIEW` and `NOT_FOUND` are not terminal. Both await the user, and both lead to
 `RESOLVED`.
+
+---
+
+# 20A. Emails with no attachment
+
+**OPEN DECISION.** Many receipts — ride-hailing, food delivery, most app stores — arrive as
+an HTML email with no attachment. The document *is* the message body.
+
+Retrieval cannot use them today. `docs/workflows/connect-gmail.md §5` forbids persisting a
+message body or sending one to a model, and turning a body into a stored PDF would be
+persisting it. So retrieval searches only for messages with a PDF attachment. A requirement
+whose only evidence is such an email ends `NOT_FOUND`, and the user uploads the receipt
+by hand.
+
+Relaxing this is a product and privacy decision, not an implementation detail. It is
+recorded here so it is not made silently.
 
 ---
 

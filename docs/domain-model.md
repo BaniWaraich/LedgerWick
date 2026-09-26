@@ -306,6 +306,13 @@ A Gmail Connection outlives its credentials. Disconnecting deletes them and keep
 
 Gmail Connections are part of the current domain model because they represent an established source of Invoice Documents in V1.
 
+Retrieval leaves two records behind, both scoped to a Workspace and to an Invoice Requirement:
+
+- a **Mailbox Search** for each connection it searched, saying where it looked and what happened;
+- a **Candidate Email** for each message it found, with the evidence for it and what fetching it produced.
+
+Documents fetched from a Candidate Email are ordinary Supporting Documents, and a document reached through two connections is one document. See `docs/glossary.md` and `docs/decisions/0016`.
+
 ---
 
 ## 3.11 Supporting Document

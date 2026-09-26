@@ -19,7 +19,9 @@
  * return. Nothing is inferred from the document here.
  */
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+
+import { isUniqueViolation } from "../db/errors";
 
 import { canonicalTransactions, supportingDocuments } from "../db/schema";
 import type { WorkspaceScope } from "../db/workspace-scope";
@@ -53,6 +55,14 @@ export interface DocumentOrigin {
    * second code path to keep in step.
    */
   readonly canonicalTransactionId?: string;
+  /**
+   * The bytes' SHA-256, for a document retrieved from Gmail.
+   *
+   * With one, storing is idempotent: a GMAIL document with the same hash already in the
+   * workspace is returned rather than stored again (`docs/decisions/0016`). The unique index
+   * on it is what makes that certain rather than likely.
+   */
+  readonly contentHash?: string;
 }
 
 /** What storing one document produced. */
@@ -60,6 +70,8 @@ export interface StoredDocument {
   readonly documentId: string;
   /** False when the bytes are safe but nothing was told to process them. */
   readonly started: boolean;
+  /** True when these exact bytes were already stored, and that document was returned. */
+  readonly existing: boolean;
 }
 
 /**
@@ -102,32 +114,68 @@ export async function storeSupportingDocument(
           )
         )?.id ?? null);
 
-  const [document] = await scope.insert(supportingDocuments, {
-    canonicalTransactionId: bound,
-    // Replaced below with the key the store returned. Never left as this value: a row whose
-    // storage_ref does not resolve claims to hold a document the system cannot produce.
-    storageRef: "",
-    filename: file.filename,
-    mimeType: file.contentType,
-    source: origin.source,
-    sourceMetadata: origin.sourceMetadata ?? null,
-  });
+  let document: typeof supportingDocuments.$inferSelect;
+  try {
+    [document] = await scope.insert(supportingDocuments, {
+      canonicalTransactionId: bound,
+      // Replaced below with the key the store returned. Never left as this value: a row
+      // whose storage_ref does not resolve claims to hold a document the system cannot
+      // produce.
+      storageRef: "",
+      filename: file.filename,
+      mimeType: file.contentType,
+      source: origin.source,
+      sourceMetadata: origin.sourceMetadata ?? null,
+      contentHash: origin.contentHash ?? null,
+    });
+  } catch (error) {
+    if (!isUniqueViolation(error, "supporting_documents_gmail_content_idx")) throw error;
 
-  const stored = await store.put(
-    documentKey(scope.workspaceId, "documents", document.id, file.filename),
-    Buffer.from(file.bytes),
-    file.contentType,
-  );
+    /*
+     * These exact bytes are already here. Return that document rather than a second copy.
+     *
+     * If an earlier attempt died between writing the row and storing the bytes, its
+     * `storage_ref` is still empty, and this attempt is the one that finishes it. Nothing is
+     * published for an existing document: it was published, or is being, by whichever
+     * attempt created it.
+     */
+    const existing = await scope.selectOne(
+      supportingDocuments,
+      and(
+        eq(supportingDocuments.source, "GMAIL"),
+        eq(supportingDocuments.contentHash, origin.contentHash ?? ""),
+      ),
+    );
+    if (!existing) throw error;
+    if (existing.storageRef === "") await putBytes(scope, store, existing.id, file);
+    return { documentId: existing.id, started: false, existing: true };
+  }
 
-  await scope.update(supportingDocuments, { storageRef: stored.key }, eqDocument(document.id));
+  await putBytes(scope, store, document.id, file);
 
   try {
     await publish(document.id);
   } catch {
-    return { documentId: document.id, started: false };
+    return { documentId: document.id, started: false, existing: false };
   }
 
-  return { documentId: document.id, started: true };
+  return { documentId: document.id, started: true, existing: false };
+}
+
+/** Store the bytes under the document's own key, and record the key the store returned. */
+async function putBytes(
+  scope: WorkspaceScope,
+  store: DocumentStore,
+  documentId: string,
+  file: { bytes: Uint8Array; filename: string; contentType: string },
+): Promise<void> {
+  const stored = await store.put(
+    documentKey(scope.workspaceId, "documents", documentId, file.filename),
+    Buffer.from(file.bytes),
+    file.contentType,
+  );
+
+  await scope.update(supportingDocuments, { storageRef: stored.key }, eqDocument(documentId));
 }
 
 function eqDocument(documentId: string) {

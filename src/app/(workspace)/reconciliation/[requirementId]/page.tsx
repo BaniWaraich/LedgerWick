@@ -113,10 +113,10 @@ export default async function ReviewPage({
         <ul className={styles.did}>
           <li>
             {whatWeDid.candidatesConsidered === 0
-              ? "Nothing on your statements looked like a match for a document you've uploaded."
+              ? "We haven't found a document that looks like a match for this payment."
               : `We looked at ${whatWeDid.candidatesConsidered} ${
                   whatWeDid.candidatesConsidered === 1 ? "document" : "documents"
-                } you've uploaded.`}
+                } that might be for this payment.`}
           </li>
           {whatWeDid.rejectedPreviously > 0 ? (
             <li>
@@ -130,12 +130,23 @@ export default async function ReviewPage({
           {whatWeDid.truncated ? (
             <li>There were more payments than we could compare, so this may not be everything.</li>
           ) : null}
-          {/* Honest rather than silent: nothing records a search because none happens yet. */}
-          <li>
-            {whatWeDid.searchedMailboxes.length === 0
-              ? `We haven't searched any email, because no mailbox is connected yet.`
-              : `We searched ${whatWeDid.searchedMailboxes.join(", ")}.`}
-          </li>
+          {/*
+            §4: "we looked in three mailboxes across two weeks" or "we never got to look" --
+            and which it was, mailbox by mailbox.
+          */}
+          {whatWeDid.searchedMailboxes.length === 0 ? (
+            <li>We haven&rsquo;t searched any email for this payment.</li>
+          ) : (
+            whatWeDid.searchedMailboxes.map((mailbox) => (
+              <li key={mailbox.email}>
+                {mailbox.outcome === "COMPLETED"
+                  ? `We searched ${mailbox.email} for mail from ${mailbox.windowStart} to ${mailbox.windowEnd}.`
+                  : mailbox.outcome === "NEEDS_REAUTH"
+                    ? `We couldn't search ${mailbox.email}: Google needs you to reconnect it.`
+                    : `We couldn't finish searching ${mailbox.email}. We'll try again.`}
+              </li>
+            ))
+          )}
         </ul>
       </section>
 

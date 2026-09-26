@@ -16,7 +16,7 @@ import { openWorkspaceForJob } from "../../auth/background";
 import { reconciliationRuns } from "../../db/schema";
 import { classifyTransactions } from "../../requirements/classifier";
 import { identifyRequirements } from "../../requirements/identify";
-import { inngest, reconciliationRequested } from "../client";
+import { inngest, reconciliationRequested, retrievalRequested } from "../client";
 
 export const identifyRequirementsFunction = inngest.createFunction(
   {
@@ -66,5 +66,19 @@ export const identifyRequirementsFunction = inngest.createFunction(
 
       return identifyRequirements(scope, { classify: classifyTransactions });
     });
+
+    /*
+     * `retrieve-invoices.md §4`: retrieval "begins automatically after the Identify Invoice
+     * Requirements workflow completes". Sent whether or not this run found anything new,
+     * because each run also searches again for what earlier runs did not find
+     * (`docs/state-machines.md §2`). The fan-out finds nothing to do when there is no mailbox.
+     */
+    await step.sendEvent(
+      "retrieve",
+      retrievalRequested.create({
+        workspaceId: event.data.workspaceId,
+        userId: event.data.userId,
+      }),
+    );
   },
 );
