@@ -11,7 +11,8 @@ import { accessTokenFor, FakeGmail } from "./fake-gmail";
 
 vi.mock("server-only", () => ({}));
 
-const { GmailApiError, messageMetadata, searchMessages } = await import("../../src/gmail/mail");
+const { GmailApiError, attachmentsOf, downloadAttachment, messageMetadata, searchMessages } =
+  await import("../../src/gmail/mail");
 
 const TOKEN = accessTokenFor("r1");
 
@@ -160,5 +161,50 @@ describe("failures", () => {
     const error = await searchMessages(fake.gmail, TOKEN, "x", 10).catch((e: Error) => e);
 
     expect((error as Error).message).toBe("Gmail API failed: config");
+  });
+});
+
+describe("reading a selected message's attachments", () => {
+  const pdf = new TextEncoder().encode("%PDF-1.7 Anthropic receipt 2231-9912 $20.00");
+  const withAttachments = {
+    ...message,
+    body: "Hi Priya, card ending 4242 was charged $20.00 for Claude Pro.",
+    attachments: [
+      { filename: "Receipt-2231-9912.pdf", bytes: pdf },
+      { filename: "logo.png", bytes: new Uint8Array([1, 2, 3]), mimeType: "image/png" },
+    ],
+  };
+
+  it("lists the attachments and nothing of the body", async () => {
+    // spec: connect-gmail §5 — full content is fetched only to reach an attachment, and
+    // the body is never let out.
+    const fake = new FakeGmail().mailbox("r1", [withAttachments]);
+
+    const refs = await attachmentsOf(fake.gmail, TOKEN, "m1");
+
+    expect(refs.map((r) => [r.filename, r.mimeType, r.size])).toEqual([
+      ["Receipt-2231-9912.pdf", "application/pdf", pdf.length],
+      ["logo.png", "image/png", 3],
+    ]);
+    expect(keysOf(refs)).not.toContain("data");
+    expect(JSON.stringify(refs)).not.toContain("Y2FyZCBlbmRpbmcgNDI0Mg");
+    expect(JSON.stringify(refs)).not.toContain("card ending 4242");
+  });
+
+  it("asks for the full format, the one place anything does", async () => {
+    const fake = new FakeGmail().mailbox("r1", [withAttachments]);
+
+    await attachmentsOf(fake.gmail, TOKEN, "m1");
+
+    expect(fake.gmailRequests().map((u) => u.searchParams.get("format"))).toEqual(["full"]);
+  });
+
+  it("downloads an attachment's bytes exactly", async () => {
+    const fake = new FakeGmail().mailbox("r1", [withAttachments]);
+    const [ref] = await attachmentsOf(fake.gmail, TOKEN, "m1");
+
+    const bytes = await downloadAttachment(fake.gmail, TOKEN, "m1", ref.attachmentId);
+
+    expect(Buffer.from(bytes).equals(Buffer.from(pdf))).toBe(true);
   });
 });

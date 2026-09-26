@@ -183,3 +183,90 @@ export async function messageMetadata(
     receivedAt: new Date(Number.isFinite(received) ? received : 0),
   };
 }
+
+/* ------------------------------------------------------------------ fetching */
+
+/*
+ * Everything below reads a message's contents, and runs only for a message retrieval has
+ * already selected from its headers (`connect-gmail.md §5`: full content "only to fetch an
+ * attachment on a message that has already been selected as a candidate"). Nothing on the
+ * search path calls it.
+ */
+
+/** One attachment on a message: enough to decide whether to download it, and nothing more. */
+export interface AttachmentRef {
+  readonly partId: string;
+  readonly filename: string;
+  readonly mimeType: string;
+  /** Bytes, as Gmail reports them. */
+  readonly size: number;
+  readonly attachmentId: string;
+}
+
+interface Part {
+  partId?: unknown;
+  filename?: unknown;
+  mimeType?: unknown;
+  body?: { attachmentId?: unknown; size?: unknown };
+  parts?: Part[];
+}
+
+/**
+ * A message's attachments, via `format=full` -- the one full-format request in the system.
+ *
+ * `format=full` returns the whole part tree, and small text parts come with their content
+ * inline: the body of the email. So the tree is walked here and each attachment is rebuilt
+ * field by field from its name, type, size and attachment id. No part's `data` is ever
+ * read, and so none can be returned. A part with no filename is the message body or an
+ * inline image, and is not an attachment.
+ *
+ * Only parts Gmail stores separately -- those with an `attachmentId` -- are returned. Gmail
+ * inlines only very small parts, and a PDF invoice is never one of them.
+ */
+export async function attachmentsOf(
+  client: GmailClient,
+  token: string,
+  messageId: string,
+): Promise<AttachmentRef[]> {
+  const url = new URL(`${API}/messages/${encodeURIComponent(messageId)}`);
+  url.searchParams.set("format", "full");
+
+  const body = (await get(client, token, url)) as { payload?: Part };
+
+  const found: AttachmentRef[] = [];
+  const walk = (part: Part | undefined) => {
+    if (!part) return;
+    const filename = typeof part.filename === "string" ? part.filename : "";
+    const attachmentId = part.body?.attachmentId;
+    if (filename !== "" && typeof attachmentId === "string" && attachmentId !== "") {
+      found.push({
+        partId: typeof part.partId === "string" ? part.partId : "",
+        filename,
+        mimeType: typeof part.mimeType === "string" ? part.mimeType : "application/octet-stream",
+        size: typeof part.body?.size === "number" ? part.body.size : 0,
+        attachmentId,
+      });
+    }
+    for (const child of part.parts ?? []) walk(child);
+  };
+  walk(body.payload);
+
+  return found;
+}
+
+/** One attachment's bytes. */
+export async function downloadAttachment(
+  client: GmailClient,
+  token: string,
+  messageId: string,
+  attachmentId: string,
+): Promise<Uint8Array> {
+  const url = new URL(
+    `${API}/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`,
+  );
+
+  const body = (await get(client, token, url)) as { data?: unknown };
+  if (typeof body.data !== "string") throw new GmailApiError("transient");
+
+  return new Uint8Array(Buffer.from(body.data, "base64url"));
+}

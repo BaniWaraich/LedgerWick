@@ -531,11 +531,32 @@ export const supportingDocuments = pgTable(
       () => canonicalTransactions.id,
       { onDelete: "set null" },
     ),
+    /**
+     * SHA-256 of the bytes, hex. Set for documents retrieved from Gmail.
+     *
+     * The only identity Gmail's data allows (`docs/decisions/0016`): an attachment id
+     * differs between two reads of one message, and one message has a different id in
+     * each mailbox it reached. The same invoice fetched twice -- on a retry, on a later
+     * run, through a second mailbox -- has the same bytes and nothing else reliably in
+     * common.
+     */
+    contentHash: text("content_hash"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     index("supporting_documents_workspace_idx").on(t.workspaceId),
     index("supporting_documents_transaction_idx").on(t.canonicalTransactionId),
+    /*
+     * One stored document per retrieved file, per workspace. A constraint rather than a
+     * check in the fetch step, so that a retry racing a retry cannot store the file twice.
+     *
+     * Retrieved documents only. A user uploading the same file they were emailed is the
+     * Suspected Duplicate case (`manual-invoice-upload.md §13`), which is put to them
+     * rather than silently collapsed.
+     */
+    uniqueIndex("supporting_documents_gmail_content_idx")
+      .on(t.workspaceId, t.contentHash)
+      .where(sql`source = 'GMAIL' and content_hash is not null`),
   ],
 );
 
@@ -993,5 +1014,35 @@ export const candidateEmails = pgTable(
       t.gmailMessageId,
     ),
     index("candidate_emails_requirement_idx").on(t.workspaceId, t.requirementId),
+  ],
+);
+
+/**
+ * Which documents were fetched from which Candidate Email.
+ *
+ * spec: docs/workflows/retrieve-invoices.md §11 -- a stored document traces back to its
+ * Gmail account, its email and its attachment. decision: docs/decisions/0016.
+ *
+ * Many-to-many, and that is the point. One message may carry two PDFs. One PDF may arrive
+ * through two mailboxes, as two Candidate Emails and one document. A column on either
+ * table would lose one of those.
+ */
+export const candidateEmailDocuments = pgTable(
+  "candidate_email_documents",
+  {
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    candidateEmailId: uuid("candidate_email_id")
+      .notNull()
+      .references(() => candidateEmails.id, { onDelete: "cascade" }),
+    /** Cascade: a document outlives its email, never the other way round. */
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => supportingDocuments.id, { onDelete: "cascade" }),
+  },
+  (t) => [
+    uniqueIndex("candidate_email_documents_pk").on(t.candidateEmailId, t.documentId),
+    index("candidate_email_documents_document_idx").on(t.workspaceId, t.documentId),
   ],
 );

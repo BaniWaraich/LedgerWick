@@ -193,6 +193,28 @@ async function recordSearch(
   }
 }
 
+/**
+ * A mailbox searched earlier in this run turned out, while fetching, to need reconnecting.
+ *
+ * Its search is no longer one the settle step can rely on: it found messages we could not
+ * then read. So it is recorded as a mailbox we could not search, which is the truth that
+ * matters for what the requirement comes to.
+ */
+export async function markMailboxNeedsReauth(
+  scope: WorkspaceScope,
+  requirementId: string,
+  gmailConnectionId: string,
+): Promise<void> {
+  await scope.update(
+    mailboxSearches,
+    { outcome: "NEEDS_REAUTH" },
+    and(
+      eq(mailboxSearches.requirementId, requirementId),
+      eq(mailboxSearches.gmailConnectionId, gmailConnectionId),
+    ),
+  );
+}
+
 /** What one mailbox's search produced. */
 interface MailboxResult {
   readonly outcome: MailboxOutcome;

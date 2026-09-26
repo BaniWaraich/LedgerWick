@@ -158,6 +158,19 @@ describe("google's endpoints", () => {
 });
 
 describe("retrieval", () => {
+  it("searches without any way to read a message's contents", () => {
+    // connect-gmail §5: the search path issues no full-format request. Structurally: the
+    // file that searches does not import the functions that read contents.
+    const search = files.find((f) => f.path === "src/retrieval/search.ts");
+    expect(search?.code).toBeDefined();
+    expect(search?.code).not.toMatch(/attachmentsOf|downloadAttachment/);
+  });
+
+  it("asks for full format in one place only", () => {
+    const full = files.filter((f) => /["']full["']/.test(f.code)).map((f) => f.path);
+    expect(full).toEqual(["src/gmail/mail.ts"]);
+  });
+
   it("never reaches a model", () => {
     // docs/decisions/0016: retrieval searches and fetches; models are the assessor's. The
     // split is what keeps mail and credentials out of any module that builds a prompt.

@@ -1,8 +1,8 @@
 /**
- * Search one requirement's mailboxes for its document.
+ * Search one requirement's mailboxes for its document, and download what is worth reading.
  *
  * A thin shell, like `match-invoice.ts`: it turns an event into a scope and calls
- * `searchRequirement`. The judgment stays in `src/retrieval/` so it can be tested without
+ * `searchRequirement`, then `fetchForRequirement`. The judgment stays in `src/retrieval/` so it can be tested without
  * Inngest and without Google.
  *
  * This function reaches Gmail and never a model. `docs/decisions/0016` splits retrieval at
@@ -14,9 +14,11 @@ import { NonRetriableError } from "inngest";
 import { openWorkspaceForJob } from "../../auth/background";
 import { gmailClient } from "../../gmail/mail";
 import { googleOAuthClient } from "../../gmail/oauth";
+import { getDocumentStore } from "../../storage/blob-store";
+import { fetchForRequirement } from "../../retrieval/fetch";
 import { moveRequirement } from "../../retrieval/requirement-state";
 import { isPermanentFailure, searchRequirement } from "../../retrieval/search";
-import { inngest, requirementRetrievalRequested } from "../client";
+import { inngest, requirementRetrievalRequested, retrievalFetched } from "../client";
 
 export const retrieveDocumentsFunction = inngest.createFunction(
   {
@@ -49,22 +51,47 @@ export const retrieveDocumentsFunction = inngest.createFunction(
       await moveRequirement(scope, requirementId, "FAILED");
     },
   },
-  async ({ event, step }) =>
-    step.run("search", async () => {
-      const { workspaceId, userId, requirementId } = event.data;
-      const scope = await openWorkspaceForJob(userId, workspaceId);
+  async ({ event, step }) => {
+    const { workspaceId, userId, requirementId } = event.data;
 
-      try {
-        return await searchRequirement(scope, requirementId, {
-          oauth: googleOAuthClient(),
-          gmail: gmailClient(),
-        });
-      } catch (error) {
-        // The error's name only. A Google failure never carries a token (`oauth.ts`).
-        if (isPermanentFailure(error)) {
-          throw new NonRetriableError(error instanceof Error ? error.name : "config");
-        }
-        throw error;
+    /** Our configuration is wrong: stop retrying, and let `onFailure` record it. */
+    const permanent = (error: unknown): never => {
+      // The error's name only. A Google failure never carries a token (`oauth.ts`).
+      if (isPermanentFailure(error)) {
+        throw new NonRetriableError(error instanceof Error ? error.name : "config");
       }
-    }),
+      throw error;
+    };
+
+    const deps = () => ({ oauth: googleOAuthClient(), gmail: gmailClient() });
+
+    const searched = await step.run("search", async () => {
+      const scope = await openWorkspaceForJob(userId, workspaceId);
+      return searchRequirement(scope, requirementId, deps()).catch(permanent);
+    });
+
+    if (searched.kind !== "SEARCHED" || searched.next !== "FETCH") return searched;
+
+    /*
+     * A step of its own, so a retry after a transient failure mid-download does not search
+     * again: Inngest replays the search's recorded result and resumes here, and messages
+     * already fetched carry an outcome and are skipped.
+     */
+    const fetched = await step.run("fetch", async () => {
+      const scope = await openWorkspaceForJob(userId, workspaceId);
+      return fetchForRequirement(scope, requirementId, {
+        ...deps(),
+        store: getDocumentStore(),
+      }).catch(permanent);
+    });
+
+    if (fetched.next === "ASSESS") {
+      await step.sendEvent(
+        "assess",
+        retrievalFetched.create({ workspaceId, userId, requirementId }),
+      );
+    }
+
+    return fetched;
+  },
 );

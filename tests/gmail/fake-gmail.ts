@@ -31,6 +31,16 @@ export interface FakeMessage {
   readonly snippet?: string;
   /** Which search passes find this message. Both, unless a test says otherwise. */
   readonly foundBy?: readonly ("VENDOR" | "KEYWORD")[];
+  /** What a full-format read finds attached. */
+  readonly attachments?: readonly FakeAttachment[];
+  /** The message body, inline in a full-format read. Must never escape either. */
+  readonly body?: string;
+}
+
+export interface FakeAttachment {
+  readonly filename: string;
+  readonly bytes: Uint8Array;
+  readonly mimeType?: string;
 }
 
 export type Failure = Response | Error;
@@ -97,9 +107,12 @@ export class FakeGmail {
       const path = url.pathname.replace("/gmail/v1/users/me/", "");
       if (path === "messages") return this.list(url, messages);
 
-      const id = decodeURIComponent(path.replace(/^messages\//, ""));
-      const message = messages.find((m) => m.id === id);
+      const [, rawId, attachmentsSegment, attachmentId] = path.split("/");
+      const message = messages.find((m) => m.id === decodeURIComponent(rawId ?? ""));
       if (!message) return json(404, { error: { code: 404 } });
+      if (attachmentsSegment === "attachments") {
+        return this.attachment(message, decodeURIComponent(attachmentId ?? ""));
+      }
       return this.get(url, message);
     }) as typeof fetch;
   }
@@ -140,6 +153,68 @@ export class FakeGmail {
     });
   }
 
+  /** A full-format read: the part tree, with the body inline as Gmail sends small parts. */
+  private full(message: FakeMessage, headers: { name: string; value: string }[]): Response {
+    const text = Buffer.from(message.body ?? "Hello, your invoice is attached.").toString(
+      "base64url",
+    );
+    return json(200, {
+      id: message.id,
+      snippet: "Hello, your invoice is attached.",
+      payload: {
+        partId: "",
+        mimeType: "multipart/mixed",
+        filename: "",
+        headers,
+        body: { size: 0 },
+        parts: [
+          {
+            partId: "0",
+            mimeType: "multipart/alternative",
+            filename: "",
+            body: { size: 0 },
+            parts: [
+              {
+                partId: "0.0",
+                mimeType: "text/plain",
+                filename: "",
+                body: { size: 40, data: text },
+              },
+              {
+                partId: "0.1",
+                mimeType: "text/html",
+                filename: "",
+                body: { size: 60, data: text },
+              },
+            ],
+          },
+          ...(message.attachments ?? []).map((attachment, index) => ({
+            partId: String(index + 1),
+            mimeType: attachment.mimeType ?? "application/pdf",
+            filename: attachment.filename,
+            body: {
+              // Fresh on every read, as Gmail's are: never a stable identity.
+              attachmentId: `att-${message.id}-${index}-${(this.reads += 1)}`,
+              size: attachment.bytes.length,
+            },
+          })),
+        ],
+      },
+    });
+  }
+
+  private reads = 0;
+
+  private attachment(message: FakeMessage, attachmentId: string): Response {
+    const index = Number(/^att-[^]*?-(\d+)-\d+$/.exec(attachmentId)?.[1] ?? "-1");
+    const attachment = message.attachments?.[index];
+    if (!attachment) return json(404, { error: { code: 404 } });
+    return json(200, {
+      size: attachment.bytes.length,
+      data: Buffer.from(attachment.bytes).toString("base64url"),
+    });
+  }
+
   private get(url: URL, message: FakeMessage): Response {
     const headers = [
       { name: "From", value: message.from },
@@ -150,6 +225,7 @@ export class FakeGmail {
     ];
 
     const format = url.searchParams.get("format");
+    if (format === "full") return this.full(message, headers);
     if (format !== "metadata") return json(400, { error: { code: 400 } });
 
     return json(200, {
@@ -161,6 +237,13 @@ export class FakeGmail {
       payload: { mimeType: "multipart/mixed", headers },
     });
   }
+}
+
+/** Requests for a message's full contents or its attachments: everything past metadata. */
+export function contentRequests(requests: URL[]): URL[] {
+  return requests.filter(
+    (url) => url.searchParams.get("format") === "full" || url.pathname.includes("/attachments/"),
+  );
 }
 
 export function accessTokenFor(refreshToken: string): string {

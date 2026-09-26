@@ -6,6 +6,7 @@
  * through an event that quietly goes nowhere.
  */
 
+import { assessRetrievalFunction } from "./assess-retrieval";
 import { identifyRequirementsFunction } from "./identify-requirements";
 import { identifyStatementFunction } from "./identify-statement";
 import { matchInvoiceFunction } from "./match-invoice";
@@ -15,6 +16,7 @@ import { retrieveDocumentsFunction } from "./retrieve-documents";
 import { understandDocumentFunction } from "./understand-document";
 
 export const functions = [
+  assessRetrievalFunction,
   identifyRequirementsFunction,
   identifyStatementFunction,
   matchInvoiceFunction,

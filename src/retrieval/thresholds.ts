@@ -50,3 +50,13 @@ export const RESULTS_PER_PASS = 25;
  * step treats it as it treats a truncated search.
  */
 export const MAX_MESSAGES_FETCHED = 5;
+
+/**
+ * The largest attachment downloaded, in bytes.
+ *
+ * A safety valve against a scanned 200-page contract sharing a subject line with an
+ * invoice. An invoice PDF is kilobytes; ten megabytes is far past any we would read, and
+ * well inside what a background function can hold in memory. A larger file is skipped, not
+ * failed: the user can still upload it by hand.
+ */
+export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;

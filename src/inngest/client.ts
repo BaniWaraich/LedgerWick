@@ -119,4 +119,15 @@ export const requirementRetrievalRequested = eventType("retrieval/requirement", 
   schema: workspaceEvent.extend({ requirementId: z.uuid() }),
 });
 
+/**
+ * Retrieval downloaded documents for this requirement. Judge them and settle it.
+ *
+ * Its own event, and its own function, because judging calls models and fetching reached
+ * Gmail, and `docs/decisions/0016` keeps those in separate modules: the function that holds
+ * mail credentials never builds a prompt.
+ */
+export const retrievalFetched = eventType("retrieval/fetched", {
+  schema: workspaceEvent.extend({ requirementId: z.uuid() }),
+});
+
 export const inngest = new Inngest({ id: "ledgerwick" });

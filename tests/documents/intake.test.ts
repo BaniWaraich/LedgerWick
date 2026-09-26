@@ -272,3 +272,74 @@ describe("an upload that already knows its payment", () => {
     expect(row.canonicalTransactionId).toBeNull();
   });
 });
+
+describe("storing a file retrieved from Gmail", () => {
+  const retrieved = (hash: string) => ({ source: "GMAIL" as const, contentHash: hash });
+
+  it("returns the document already stored for the same bytes, rather than a second", async () => {
+    // docs/decisions/0016: a retry, a later run, or a second mailbox brings the same file.
+    const { scope, store } = await workspace();
+    let published = 0;
+    const publish = async () => {
+      published += 1;
+    };
+
+    const first = await storeSupportingDocument(scope, store, file, retrieved("h1"), publish);
+    const second = await storeSupportingDocument(scope, store, file, retrieved("h1"), publish);
+
+    expect(second).toEqual({ documentId: first.documentId, started: false, existing: true });
+    expect(await scope.select(schema.supportingDocuments)).toHaveLength(1);
+    expect(published).toBe(1);
+  });
+
+  it("finishes a document whose bytes an earlier attempt never stored", async () => {
+    const { scope, store } = await workspace();
+    const [orphan] = await scope.insert(schema.supportingDocuments, {
+      storageRef: "",
+      filename: file.filename,
+      mimeType: file.contentType,
+      source: "GMAIL",
+      contentHash: "h2",
+    });
+
+    const outcome = await storeSupportingDocument(
+      scope,
+      store,
+      file,
+      retrieved("h2"),
+      async () => {},
+    );
+
+    expect(outcome.documentId).toBe(orphan.id);
+    const [row] = await scope.select(schema.supportingDocuments);
+    expect(row.storageRef).not.toBe("");
+    expect(await store.get(row.storageRef)).not.toBeNull();
+  });
+
+  it("does not collapse an upload into a retrieved copy of the same file", async () => {
+    // A user uploading what they were emailed is a Suspected Duplicate, put to them.
+    const { scope, store } = await workspace();
+
+    await storeSupportingDocument(scope, store, file, retrieved("h3"), async () => {});
+    await storeSupportingDocument(
+      scope,
+      store,
+      file,
+      { source: "MANUAL_UPLOAD", contentHash: "h3" },
+      async () => {},
+    );
+
+    expect(await scope.select(schema.supportingDocuments)).toHaveLength(2);
+  });
+
+  it("keeps the same bytes in two workspaces as two documents", async () => {
+    const one = await workspace();
+    const two = await workspace();
+
+    await storeSupportingDocument(one.scope, one.store, file, retrieved("h4"), async () => {});
+    await storeSupportingDocument(two.scope, two.store, file, retrieved("h4"), async () => {});
+
+    expect(await one.scope.select(schema.supportingDocuments)).toHaveLength(1);
+    expect(await two.scope.select(schema.supportingDocuments)).toHaveLength(1);
+  });
+});
