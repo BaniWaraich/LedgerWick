@@ -39,9 +39,10 @@ import {
   vendors,
 } from "../../src/db/schema";
 import type { AdjudicateMatch } from "../../src/matching/contracts";
-import type { FakeMessage } from "../gmail/fake-gmail";
+import { createTestDb, type TestDb } from "../helpers/db";
+import { FakeGmail, type FakeMessage } from "../gmail/fake-gmail";
 import { paper, Pipeline, reading, type Paper } from "./pipeline";
-import { world, type World } from "./world";
+import { addWorkspace, type World } from "./world";
 
 vi.mock("server-only", () => ({}));
 
@@ -410,9 +411,16 @@ function outcomeOf(state: string): Label {
   }
 }
 
+/*
+ * One database for the whole set, and a fresh workspace per case. Twenty-one databases
+ * was slow enough under the full suite to time out, and workspaces are the isolation the
+ * product itself relies on -- which `isolation.test.ts` proves separately.
+ */
+let h: TestDb;
+
 async function runCase(c: Case): Promise<Result> {
-  const w = await world();
-  try {
+  const w = await addWorkspace(h, new FakeGmail());
+  {
     await c.setup?.(w);
     for (const [index, mailbox] of c.mailboxes.entries()) {
       const refresh = `r-${index}`;
@@ -447,18 +455,19 @@ async function runCase(c: Case): Promise<Result> {
       linked,
       correct: c.correct,
     };
-  } finally {
-    await w.h.close();
   }
 }
 
 const results: Result[] = [];
 
 beforeAll(async () => {
+  h = await createTestDb();
   for (const c of CASES) results.push(await runCase(c));
-}, 120_000);
+}, 300_000);
 
-afterAll(() => {
+afterAll(async () => {
+  await h.close();
+
   const autos = results.filter((r) => r.outcome === "AUTO");
   const truePositives = autos.filter((r) => r.label === "AUTO" && r.linked === r.correct);
   const expectedAutos = results.filter((r) => r.label === "AUTO");
