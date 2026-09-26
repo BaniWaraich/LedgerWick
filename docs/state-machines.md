@@ -82,10 +82,11 @@ enumerated values from this document.
 ### User-facing messages
 
 `IDENTIFIED` reads "waiting for a document" rather than "waiting to search", because
-searching is one of two ways a document arrives and it is the one that does not exist yet.
-Until Gmail retrieval lands, a requirement in `IDENTIFIED` is waiting for the user to
-upload something, and telling them we are about to search a mailbox they have not
-connected would be a promise the system cannot keep.
+searching is one of two ways a document arrives. A requirement stays in `IDENTIFIED` only
+when there is no mailbox to search — none connected, or every one disconnected — and it is
+then waiting for the user to upload something. With a mailbox connected, retrieval moves it
+to `SEARCHING` as soon as identification completes, so "waiting to search" would describe a
+state the user never sees.
 
 | Condition                   | Message                                       |
 | --------------------------- | --------------------------------------------- |
@@ -217,10 +218,11 @@ resolves the requirement and teaches the system something; see Business Knowledg
 ### User-facing messages
 
 `IDENTIFIED` reads "waiting for a document" rather than "waiting to search", because
-searching is one of two ways a document arrives and it is the one that does not exist yet.
-Until Gmail retrieval lands, a requirement in `IDENTIFIED` is waiting for the user to
-upload something, and telling them we are about to search a mailbox they have not
-connected would be a promise the system cannot keep.
+searching is one of two ways a document arrives. A requirement stays in `IDENTIFIED` only
+when there is no mailbox to search — none connected, or every one disconnected — and it is
+then waiting for the user to upload something. With a mailbox connected, retrieval moves it
+to `SEARCHING` as soon as identification completes, so "waiting to search" would describe a
+state the user never sees.
 
 | State          | Message                          |
 | -------------- | -------------------------------- |
