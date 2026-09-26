@@ -14,7 +14,7 @@
  * that guarantee is worth more than the extra round trips.
  */
 
-import { eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 
 import {
   bankAccounts,
@@ -22,6 +22,7 @@ import {
   canonicalTransactions,
   clarificationQuestions,
   invoiceRequirements,
+  mailboxSearches,
   reconciliationRuns,
 } from "../db/schema";
 import type { WorkspaceScope } from "../db/workspace-scope";
@@ -113,4 +114,37 @@ function queueOf(
         rank(a.requirement.state) - rank(b.requirement.state) ||
         a.transaction.valueDate.localeCompare(b.transaction.valueDate),
     );
+}
+
+/**
+ * How many requirements are blocked on each mailbox, keyed by Gmail Connection id.
+ *
+ * `connect-gmail.md §9`: the reconnect prompt says "7 invoices are waiting on this". A
+ * requirement counts against a mailbox when it is `BLOCKED`, unresolved, and its latest
+ * search of that mailbox could not happen because the mailbox needs reconnecting. One
+ * blocked on two mailboxes counts against both, because reconnecting either is progress.
+ */
+export async function blockedByMailbox(scope: WorkspaceScope): Promise<Map<string, number>> {
+  const blocked = await scope.select(
+    invoiceRequirements,
+    and(eq(invoiceRequirements.state, "BLOCKED"), isNull(invoiceRequirements.resolutionMethod)),
+  );
+  if (blocked.length === 0) return new Map();
+
+  const searches = await scope.select(
+    mailboxSearches,
+    and(
+      eq(mailboxSearches.outcome, "NEEDS_REAUTH"),
+      inArray(
+        mailboxSearches.requirementId,
+        blocked.map((requirement) => requirement.id),
+      ),
+    ),
+  );
+
+  const counts = new Map<string, number>();
+  for (const search of searches) {
+    counts.set(search.gmailConnectionId, (counts.get(search.gmailConnectionId) ?? 0) + 1);
+  }
+  return counts;
 }

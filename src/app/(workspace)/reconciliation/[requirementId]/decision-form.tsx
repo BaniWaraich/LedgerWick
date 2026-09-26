@@ -59,7 +59,7 @@ export function DecisionForm({
 
           <ul className={styles.candidates}>
             {candidates.map((candidate) => (
-              <li className={styles.candidate} key={candidate.invoiceId}>
+              <li className={styles.candidate} key={candidate.documentId}>
                 <div className={styles.candidateHead}>
                   <p className={styles.candidateName}>
                     {candidate.vendorName ?? candidate.filename}
@@ -69,6 +69,24 @@ export function DecisionForm({
                   </p>
                   <p className={styles.candidateMeta}>{candidate.filename}</p>
                 </div>
+
+                {/*
+                  §5's "From: receipts@anthropic.com": where a retrieved document came from, and
+                  why that email was looked at. Headers only; retrieval never kept more.
+                */}
+                {candidate.mail ? (
+                  <div className={styles.mail}>
+                    <p className={styles.candidateMeta}>From: {candidate.mail.from}</p>
+                    <p className={styles.candidateMeta}>
+                      {candidate.mail.subject} · found in {candidate.mail.mailbox}
+                    </p>
+                    <ul className={styles.evidence}>
+                      {candidate.mail.evidence.map((line) => (
+                        <li key={line}>{line}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
 
                 {/* §5's "Why they match": the evidence, as sentences, never a score. */}
                 <ul className={styles.evidence}>
@@ -100,7 +118,9 @@ export function DecisionForm({
                       const form = event.currentTarget.form;
                       if (form) {
                         (form.elements.namedItem("invoiceId") as HTMLInputElement).value =
-                          candidate.invoiceId;
+                          candidate.invoiceId ?? "";
+                        (form.elements.namedItem("candidateDocumentId") as HTMLInputElement).value =
+                          candidate.invoiceId === null ? candidate.documentId : "";
                       }
                     }}
                   >
@@ -112,6 +132,7 @@ export function DecisionForm({
           </ul>
 
           <input type="hidden" name="invoiceId" defaultValue="" />
+          <input type="hidden" name="candidateDocumentId" defaultValue="" />
 
           <button
             className={styles.secondary}

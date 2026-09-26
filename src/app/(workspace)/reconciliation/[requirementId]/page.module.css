@@ -165,6 +165,13 @@
   overflow-wrap: anywhere;
 }
 
+/* §5's "From: …": where a retrieved document came from, and why that email was read. */
+.mail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
 /* §5: the evidence, as sentences. There is no score to render. */
 .evidence {
   display: flex;

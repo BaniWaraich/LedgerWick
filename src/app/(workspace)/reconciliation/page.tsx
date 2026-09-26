@@ -22,10 +22,10 @@
  *
  * ## The blocked prompt
  *
- * Feature J names each mailbox that needs reconnecting, with the Reconnect that fixes it
- * (`connect-gmail.md §9`). What it cannot yet say is how many invoices wait on *which*
- * mailbox: nothing records that until feature K writes `BLOCKED` against a connection, so
- * the blocked count stays one number for the workspace.
+ * One prompt per mailbox that needs reconnecting, naming it and saying what it is costing
+ * (`connect-gmail.md §9`): retrieval records which mailbox each blocked requirement could
+ * not search (`blockedByMailbox`). The workspace-wide count remains only for requirements
+ * no current mailbox accounts for -- blocked on one the user has since disconnected.
  */
 
 import Link from "next/link";
@@ -34,7 +34,7 @@ import { requireScope } from "../../../auth/workspace";
 import { listConnections } from "../../../gmail/connections";
 import { currencyFor } from "../../../money/currencies";
 import { formatAmount } from "../../../money/format";
-import { missingInvoiceReport, type QueueRow } from "../../../report/report";
+import { blockedByMailbox, missingInvoiceReport, type QueueRow } from "../../../report/report";
 import { parseFilter, type Filter, type Summary } from "../../../report/summary";
 import { PollWhileProcessing } from "../statements/[batchId]/poll";
 import styles from "./page.module.css";
@@ -75,6 +75,8 @@ export default async function ReconciliationPage({
   const needsReconnecting = (await listConnections(scope)).filter(
     (connection) => connection.state === "NEEDS_REAUTH",
   );
+  const waiting = await blockedByMailbox(scope);
+  const accountedFor = needsReconnecting.some((connection) => waiting.has(connection.id));
 
   return (
     <div className={styles.page}>
@@ -112,7 +114,7 @@ export default async function ReconciliationPage({
 
       {/*
         §6: a broken connection is one prompt, not a row per requirement. connect-gmail §9
-        names the account and what it costs; the per-account count waits on feature K.
+        names the account and what it costs.
       */}
       {needsReconnecting.map((connection) => (
         <p key={connection.id} className={styles.blocked} role="status">
@@ -122,6 +124,11 @@ export default async function ReconciliationPage({
           <span>
             We can&rsquo;t reach {connection.email}. Google needs you to reconnect this account;
             until then we can&rsquo;t search it for invoices.{" "}
+            {waiting.get(connection.id)
+              ? `${waiting.get(connection.id)} ${
+                  waiting.get(connection.id) === 1 ? "invoice is" : "invoices are"
+                } waiting on this. `
+              : null}
             <a
               href={`/api/gmail/connect?workspace=${scope.workspaceId}&reconnect=${connection.id}`}
             >
@@ -132,10 +139,10 @@ export default async function ReconciliationPage({
       ))}
 
       {/*
-        The blocked count, for the workspace as a whole: which connection each requirement
-        waits on is recorded by feature K, so this states the number and nothing it cannot back.
+        The blocked count, for the workspace as a whole, when no mailbox prompt above already
+        says it -- a requirement blocked on a mailbox the user has since disconnected.
       */}
-      {summary.blocked > 0 ? (
+      {summary.blocked > 0 && !accountedFor ? (
         <p className={styles.blocked} role="status">
           <span className="material-symbols-outlined" aria-hidden="true">
             link_off
