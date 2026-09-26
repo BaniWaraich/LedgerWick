@@ -78,7 +78,7 @@ export type Settlement =
  * not offered: settled with the user on 2026-09-26, and `retrieve-invoices.md §11.1` says
  * so. Nor is anything the user already rejected.
  */
-export function isPlausible(assessment: Assessment, input: SettleInput): boolean {
+function isPlausible(assessment: Assessment, input: SettleInput): boolean {
   if (input.rejected.has(assessment.documentId)) return false;
   if (assessment.state === "UNREADABLE") return true;
   return (

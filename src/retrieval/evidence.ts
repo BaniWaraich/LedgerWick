@@ -199,7 +199,7 @@ export function strength(evidence: readonly EmailEvidence[]): number {
 }
 
 /** One fact as a sentence a business owner can check against the message. */
-export function describeEmail(evidence: EmailEvidence): string | null {
+function describeEmail(evidence: EmailEvidence): string | null {
   switch (evidence.kind) {
     case "SENDER":
       switch (evidence.agreement) {

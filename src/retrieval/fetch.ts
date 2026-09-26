@@ -57,7 +57,7 @@ export interface FetchDeps extends SearchDeps {
 type CandidateRow = typeof candidateEmails.$inferSelect;
 
 /** Provenance kept on a retrieved document: `retrieve-invoices.md §11`'s trace, less the requirement. */
-export interface GmailProvenance {
+interface GmailProvenance {
   readonly gmailConnectionId: string;
   readonly gmailMessageId: string;
   readonly rfc822MessageId: string | null;
@@ -181,7 +181,7 @@ async function fetchMessage(
  * failure throws, and the workflow retries this step. What was already fetched stays
  * fetched.
  */
-export async function fetchSelected(
+async function fetchSelected(
   scope: WorkspaceScope,
   requirementId: string,
   deps: FetchDeps,
