@@ -522,3 +522,27 @@ The initial implementation should prioritize:
 5. Testability
 
 Cost optimization and extensive parser optimization are intentionally deferred until real usage provides evidence about where optimization is necessary.
+
+---
+
+# 14. Statement History
+
+The user must be able to return to any statement they have uploaded, not only the files of
+the upload they have just made.
+
+The Statements page lists every statement in the workspace, grouped by the upload batch it
+arrived in, newest upload first. For each statement it shows:
+
+- The file name.
+- Its processing state (`docs/state-machines.md §1`), with the failure reason where there is one.
+- The Bank Account it is bound to, and the period it covers, where known.
+- For a `COMPLETED` statement: the number of transactions and the validation outcome.
+
+From there the user can:
+
+- Open an upload, to see its files as they were presented after uploading (§11).
+- Open a completed statement's transactions (Step 6).
+- Choose the account for a statement in `NEEDS_ACCOUNT` (Step 3a).
+- Start a new upload.
+
+Files that failed stay in the history. They are the ones the user most needs to find again.
