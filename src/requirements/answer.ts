@@ -27,15 +27,15 @@
  * writing a table mapping option text to a decision -- inventing product, and inventing it
  * in the one place the workflow explicitly leaves to judgment.
  *
- * Instead the answer is stored as fact and the workspace is reconciled again. The
- * transaction still carries no requirement, so `identify.ts` sees it as new, and this time
- * the confirmed fact is in front of the model when it decides. The user's answer is used by
- * exactly the thing that asked for it.
+ * Instead the answer is stored as fact, the transaction is reopened -- its `judged_at`
+ * cleared -- and the workspace is reconciled again. `identify.ts` sees it as new, and this
+ * time the confirmed fact is in front of the model when it decides. The user's answer is
+ * used by exactly the thing that asked for it.
  */
 
 import { and, eq, isNull } from "drizzle-orm";
 
-import { clarificationQuestions } from "../db/schema";
+import { canonicalTransactions, clarificationQuestions } from "../db/schema";
 import type { WorkspaceScope } from "../db/workspace-scope";
 import { learn, normalizeVendor, VENDOR } from "./knowledge";
 
@@ -73,6 +73,14 @@ export async function recordAnswer(
   );
 
   if (!question) return { recorded: false, learned: false };
+
+  if (question.canonicalTransactionId) {
+    await scope.update(
+      canonicalTransactions,
+      { judgedAt: null },
+      eq(canonicalTransactions.id, question.canonicalTransactionId),
+    );
+  }
 
   const key = normalizeVendor(question.vendorGuess);
   if (!key) return { recorded: true, learned: false };

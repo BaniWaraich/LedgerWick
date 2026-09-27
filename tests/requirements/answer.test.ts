@@ -57,6 +57,8 @@ async function fixture(): Promise<Fixture> {
           description: `UPI/XYZ SERVICES/99${sequence}/ORDER`,
           descriptionNormalized: `upi xyz services 99${sequence} order`,
           occurrenceIndex: sequence,
+          // Raising the question is a judgment; answering it is what reopens the payment.
+          judgedAt: new Date(),
         })
         .returning();
 
@@ -103,6 +105,31 @@ describe("answering a question", () => {
     expect(fact.kind).toBe("vendor");
     expect(fact.key).toBe("xyz services");
     expect(fact.value).toMatchObject({ vendor: "XYZ Services", answer: "A business vendor" });
+  });
+
+  it("reopens the payment so the next run judges it with the answer in hand", async () => {
+    // Answering does not decide anything itself: the reconciliation it starts does, with
+    // the confirmed fact in front of the model. That run only sees transactions nobody
+    // has judged, so the answer has to put this one back among them.
+    const fx = await fixture();
+    const id = await fx.ask("XYZ Services");
+
+    await recordAnswer(fx.scope, id, "A business vendor");
+    const [transaction] = await fx.scope.select(schema.canonicalTransactions);
+
+    expect(transaction.judgedAt).toBeNull();
+  });
+
+  it("reopens nothing when the answer is not recorded", async () => {
+    const fx = await fixture();
+    const id = await fx.ask("XYZ Services");
+
+    await recordAnswer(fx.scope, id, "A business vendor");
+    await fx.scope.update(schema.canonicalTransactions, { judgedAt: new Date() });
+    await recordAnswer(fx.scope, id, "A personal payment");
+
+    const [transaction] = await fx.scope.select(schema.canonicalTransactions);
+    expect(transaction.judgedAt).not.toBeNull();
   });
 
   it("keys two spellings of one payee to the same fact", async () => {

@@ -133,6 +133,22 @@ const alwaysAsks: ClassifyTransactions = async ({ transactions }) => ({
   },
 });
 
+/** A classifier that is sure no payment needs a document. */
+const needsNothing: ClassifyTransactions = async ({ transactions }) => ({
+  ok: true,
+  value: {
+    judgements: transactions.map((transaction) => ({
+      index: transaction.index,
+      vendorGuess: null,
+      businessContext: "Internal transfer",
+      needsDocument: false,
+      reason: null,
+      confident: true,
+      clarification: null,
+    })),
+  },
+});
+
 const requirementsOf = (fx: Fixture) => fx.scope.select(invoiceRequirements);
 const questionsOf = (fx: Fixture) => fx.scope.select(clarificationQuestions);
 
@@ -218,6 +234,58 @@ describe("running it again", () => {
 
     expect(second.seen).toHaveLength(0);
     expect(second.calls).toBe(0);
+  });
+
+  it("does not judge again a payment it decided needs no document", async () => {
+    // The production failure: only a requirement marked a transaction as judged, so every
+    // payment that needed nothing -- most of a statement -- went back to the model on every
+    // retry and every later run, and nothing ever got cheaper.
+    const fx = await fixture();
+    await fx.payment({ description: "TRANSFER TO OWN HDFC ACCOUNT" });
+
+    await identifyRequirements(fx.scope, { classify: needsNothing });
+    const second = alwaysRequires();
+    await identifyRequirements(fx.scope, { classify: second });
+
+    expect(second.calls).toBe(0);
+    expect(await requirementsOf(fx)).toHaveLength(0);
+  });
+
+  it("does not ask the same question twice", async () => {
+    // §5 Step 5: "Asking twice is worse than not asking." A question still waiting for the
+    // user is a judgment made; the user answering it is what reopens the transaction.
+    const fx = await fixture();
+    await fx.payment({ description: "XYZ SERVICES" });
+
+    await identifyRequirements(fx.scope, { classify: alwaysAsks });
+    const second = alwaysRequires();
+    await identifyRequirements(fx.scope, { classify: second });
+    await identifyRequirements(fx.scope, { classify: alwaysAsks });
+
+    expect(second.calls).toBe(0);
+    expect(await questionsOf(fx)).toHaveLength(1);
+  });
+
+  it("judges again a transaction the model left out of its answer", async () => {
+    // Nothing was decided about it, so it is still new.
+    const fx = await fixture();
+    await fx.payment({ description: "ANTHROPIC" });
+    await fx.payment({ description: "FORGOTTEN" });
+
+    const answersFirstOnly: ClassifyTransactions = async (request) => {
+      const answered = await needsNothing(request);
+      if (!answered.ok) return answered;
+      return {
+        ok: true,
+        value: { judgements: answered.value.judgements.filter((j) => j.index === 0) },
+      };
+    };
+    await identifyRequirements(fx.scope, { classify: answersFirstOnly });
+
+    const second = alwaysRequires();
+    await identifyRequirements(fx.scope, { classify: second });
+
+    expect(second.seen.map((t) => t.description)).toEqual(["FORGOTTEN"]);
   });
 
   it("judges only what genuinely arrived since", async () => {
@@ -386,22 +454,7 @@ describe("nothing to do", () => {
     const fx = await fixture();
     await fx.payment({ description: "TRANSFER TO OWN HDFC ACCOUNT" });
 
-    const nothingNeeded: ClassifyTransactions = async ({ transactions }) => ({
-      ok: true,
-      value: {
-        judgements: transactions.map((transaction) => ({
-          index: transaction.index,
-          vendorGuess: null,
-          businessContext: "Internal transfer",
-          needsDocument: false,
-          reason: null,
-          confident: true,
-          clarification: null,
-        })),
-      },
-    });
-
-    const outcome = await identifyRequirements(fx.scope, { classify: nothingNeeded });
+    const outcome = await identifyRequirements(fx.scope, { classify: needsNothing });
 
     expect(outcome.state).toBe("COMPLETED");
     expect(outcome.documentsRequired).toBe(0);

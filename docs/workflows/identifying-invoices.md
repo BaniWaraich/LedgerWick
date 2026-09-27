@@ -70,8 +70,14 @@ The system collects the **Canonical Transactions** produced by statement upload
 Deduplication across overlapping statements has already happened at that point. This
 workflow never sees Statement Lines and never deduplicates.
 
-Transactions already carrying an Invoice Requirement from a previous run are skipped; the
-run analyzes what is new.
+Transactions a previous run has already judged are skipped; the run analyzes what is new.
+A transaction counts as judged once a run has reached any judgment about it: a document is
+needed, no document is needed, or a Clarification Question was raised. Carrying an Invoice
+Requirement is not enough to mark it, because most payments need no document and would be
+judged again on every run.
+
+The user answering a Clarification Question makes its transaction new again. The next run
+judges it with the answer in front of it (Step 5).
 
 Transactions are analyzed at the **business level**, rather than independently for each bank statement.
 

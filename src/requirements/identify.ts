@@ -10,12 +10,15 @@
  *
  * ## What makes re-running harmless
  *
- * §5 Step 1: "Transactions already carrying an Invoice Requirement from a previous run are
- * skipped; the run analyzes what is new." That sentence, and not a date window, is what
- * makes a second run cheap and a third run silent. A date window would re-judge everything
- * inside it and re-create what the user had already resolved; the absence of a requirement
- * is the only honest definition of "new", because it survives the user deleting statements,
- * uploading overlapping ones, and resolving requirements in between.
+ * §5 Step 1: transactions a previous run has already judged are skipped; the run analyzes
+ * what is new. `canonical_transactions.judged_at` records a judgment of any kind -- a
+ * document is needed, none is, or a question was raised -- and that, not a date window, is
+ * what makes a second run cheap and a third run silent.
+ *
+ * It used to be the absence of a requirement. Most payments need no document, so most of a
+ * statement went back to the model on every retry and every later run, and every open
+ * question was raised again. The user answering a question is the one thing that reopens a
+ * transaction (`answer.ts`), because that run has something new to judge it with.
  *
  * `invoice_requirements_transaction_idx` is the backstop underneath it. Two runs racing on
  * one workspace both see the same transaction as new, and the second insert collides rather
@@ -36,7 +39,8 @@
  * carries on, rather than returning and calling the run finished — which reported a
  * truncated list as though it were the whole answer, and is the one failure mode here that
  * a user cannot see. The skipped transactions keep no requirement, so the next run picks
- * them up under the same definition of "new" as everything else.
+ * them up under the same definition of "new" as everything else. So does a transaction the
+ * model left out of an otherwise good answer: nothing was decided about it.
  *
  * ## What code decides, and what the model decides
  *
@@ -51,7 +55,7 @@
  *   this file does not depend on it having been caught there.
  */
 
-import { eq } from "drizzle-orm";
+import { eq, inArray, isNull } from "drizzle-orm";
 
 import { mapWithConcurrency } from "../concurrency";
 import type { WorkspaceScope } from "../db/workspace-scope";
@@ -234,6 +238,7 @@ async function judgeBatch(
 
   let documentsRequired = 0;
   let questionsRaised = 0;
+  const answered = new Set<string>();
 
   for (const judgement of judgements.value.judgements) {
     const subject = rows[judgement.index - start];
@@ -241,6 +246,9 @@ async function judgeBatch(
     // entitled to write against. Dropping it is right: the model answering about row 500 of
     // a 40-row list has told us nothing about row 500.
     if (!subject) continue;
+    // The model answering twice about one row settles it once.
+    if (answered.has(subject.id)) continue;
+    answered.add(subject.id);
 
     if (!judgement.confident && judgement.clarification) {
       await scope.insert(clarificationQuestions, {
@@ -269,7 +277,15 @@ async function judgeBatch(
     if (created) documentsRequired += 1;
   }
 
-  return { judged: rows.length, documentsRequired, questionsRaised, failure: null };
+  if (answered.size > 0) {
+    await scope.update(
+      canonicalTransactions,
+      { judgedAt: new Date() },
+      inArray(canonicalTransactions.id, [...answered]),
+    );
+  }
+
+  return { judged: answered.size, documentsRequired, questionsRaised, failure: null };
 }
 
 function sum<T>(items: readonly T[], of: (item: T) => number): number {
@@ -279,6 +295,10 @@ function sum<T>(items: readonly T[], of: (item: T) => number): number {
 /**
  * The transactions no run has judged yet.
  *
+ * A requirement is still checked as well as `judged_at`. It costs one read, and a
+ * transaction that already has a requirement must never go back to the model, whatever
+ * the timestamp says.
+ *
  * Two reads and a filter rather than a join, because `WorkspaceScope` deliberately exposes
  * no join: every query it issues carries the workspace filter, and that guarantee is worth
  * more than the query being one round trip. Both reads are scoped, so a transaction from
@@ -286,7 +306,7 @@ function sum<T>(items: readonly T[], of: (item: T) => number): number {
  */
 async function transactionsAwaitingJudgement(scope: WorkspaceScope) {
   const [transactions, existing] = await Promise.all([
-    scope.select(canonicalTransactions),
+    scope.select(canonicalTransactions, isNull(canonicalTransactions.judgedAt)),
     scope.select(invoiceRequirements),
   ]);
 
