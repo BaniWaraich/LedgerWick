@@ -31,6 +31,13 @@ export interface PromptDefinition {
   readonly id: string;
   readonly version: number;
   readonly system: string;
+  /**
+   * How much the model may think before it answers. Omitted means the provider's default.
+   *
+   * Part of the prompt rather than the call, because it changes the answers, and whatever
+   * changes the answers belongs in the versioned file an eval is attributed to.
+   */
+  readonly reasoning?: "none" | "minimal" | "low" | "medium" | "high";
 }
 
 /** What the model is given: extracted text, or the document itself. */
@@ -108,6 +115,7 @@ export async function inferStructure<T>(request: {
           schema: request.schema,
           system: request.prompt.system,
           messages: [{ role: "user", content: request.content }],
+          reasoning: request.prompt.reasoning,
           maxRetries: MAX_RETRIES,
           abortSignal: AbortSignal.timeout(CALL_BUDGET_MS),
         }),
