@@ -35,13 +35,26 @@ beforeEach(() => {
 
 describe("one model call", () => {
   it("is bounded in time and retried at most once inside the call", async () => {
-    generateObject.mockResolvedValue({ object: { answer: "yes" } });
+    generateObject.mockResolvedValue({ object: { answer: "yes" }, usage: {} });
 
     await inferStructure(request);
 
     const [options] = generateObject.mock.calls[0];
     expect(options.maxRetries).toBe(1);
     expect(options.abortSignal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("logs the tokens it used beside how long it took", async () => {
+    generateObject.mockResolvedValue({
+      object: { answer: "yes" },
+      usage: { inputTokens: 1200, outputTokens: 340 },
+    });
+
+    await inferStructure(request);
+
+    expect(console.log).toHaveBeenCalledWith(
+      expect.stringMatching(/stage=model .*inputTokens=1200 outputTokens=340 outcome=ok/),
+    );
   });
 
   it("throws when it runs out of time, so the step is retried", async () => {

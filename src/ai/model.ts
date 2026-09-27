@@ -111,6 +111,9 @@ export async function inferStructure<T>(request: {
           maxRetries: MAX_RETRIES,
           abortSignal: AbortSignal.timeout(CALL_BUDGET_MS),
         }),
+      // Tokens are what a call costs. Logged beside its duration so the cost of a run can
+      // be read from the logs rather than guessed at from a gateway bill.
+      ({ usage }) => ({ inputTokens: usage.inputTokens, outputTokens: usage.outputTokens }),
     );
 
     return { ok: true, value: object };
