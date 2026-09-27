@@ -197,6 +197,11 @@ Canonical Transaction. Deduplication happens exactly once, at the point Statemen
 are promoted to Canonical Transactions; every later workflow may assume it has already
 happened.
 
+A Canonical Transaction records when identification last judged it
+(`docs/workflows/identifying-invoices.md` §5 Step 1). Judged means a document is needed,
+none is, or a question was raised. It is cleared when the user answers that question, so
+the next run judges the transaction again with the answer.
+
 Unqualified uses of "Transaction" elsewhere in this document mean Canonical Transaction.
 
 The identity rule that decides whether two Statement Lines describe the same movement is

@@ -31,6 +31,13 @@ export interface PromptDefinition {
   readonly id: string;
   readonly version: number;
   readonly system: string;
+  /**
+   * How much the model may think before it answers. Omitted means the provider's default.
+   *
+   * Part of the prompt rather than the call, because it changes the answers, and whatever
+   * changes the answers belongs in the versioned file an eval is attributed to.
+   */
+  readonly reasoning?: "none" | "minimal" | "low" | "medium" | "high";
 }
 
 /** What the model is given: extracted text, or the document itself. */
@@ -67,6 +74,25 @@ export function modelId(): string {
   return process.env.AI_MODEL?.trim() || DEFAULT_MODEL;
 }
 
+/**
+ * The longest one answer may take, retries included.
+ *
+ * Every caller runs inside an Inngest step that Vercel kills at 300 seconds, and a step
+ * killed there loses its work without a word. Production calls to classify transactions
+ * ran up to 186 seconds before this existed. Half the budget leaves room for the step's
+ * own reads and writes, and a call that times out throws like any infrastructure failure,
+ * so the step is retried instead of silently dying.
+ */
+const CALL_BUDGET_MS = 150_000;
+
+/**
+ * One retry inside the call, not the SDK's default of two.
+ *
+ * Inngest already retries the step, and each retry here is billed against the same budget.
+ * A second in-call retry mostly turned a slow failure into a slower one.
+ */
+const MAX_RETRIES = 1;
+
 /** Ask the model for one structured answer. */
 export async function inferStructure<T>(request: {
   prompt: PromptDefinition;
@@ -75,11 +101,10 @@ export async function inferStructure<T>(request: {
 }): Promise<Inference<T>> {
   try {
     /*
-     * Timed because this is the only unbounded wait in the system, and the one most likely
-     * to be why a parse never finished. No `abortSignal` and no explicit `maxRetries` are
-     * set here, so the AI SDK's own default applies — up to three attempts with backoff,
-     * invisible to the workflow above and billed entirely against its 300-second budget.
-     * Whether that default is the problem is exactly what these numbers decide.
+     * Timed because this is the slowest wait in the system. The first production run
+     * settled what the numbers were for: calls of up to 186 seconds, with the SDK's
+     * default retries on top, inside a 300-second function. So the wait is now bounded
+     * (`CALL_BUDGET_MS`, `MAX_RETRIES`), and the timing stays to show how close it comes.
      */
     const { object } = await timed(
       "model",
@@ -90,7 +115,13 @@ export async function inferStructure<T>(request: {
           schema: request.schema,
           system: request.prompt.system,
           messages: [{ role: "user", content: request.content }],
+          reasoning: request.prompt.reasoning,
+          maxRetries: MAX_RETRIES,
+          abortSignal: AbortSignal.timeout(CALL_BUDGET_MS),
         }),
+      // Tokens are what a call costs. Logged beside its duration so the cost of a run can
+      // be read from the logs rather than guessed at from a gateway bill.
+      ({ usage }) => ({ inputTokens: usage.inputTokens, outputTokens: usage.outputTokens }),
     );
 
     return { ok: true, value: object };

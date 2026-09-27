@@ -444,6 +444,14 @@ export const canonicalTransactions = pgTable(
     occurrenceIndex: integer("occurrence_index").notNull().default(0),
     /** A bank-supplied reference or UTR. When present it alone establishes identity. */
     externalReference: text("external_reference"),
+    /**
+     * When identification last reached a judgment about this transaction: a document is
+     * needed, none is, or a question was raised. Null means no run has judged it yet.
+     *
+     * identifying-invoices §5 Step 1. A requirement alone cannot mark this, because most
+     * payments need no document; they were sent to the model again on every run.
+     */
+    judgedAt: timestamp("judged_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

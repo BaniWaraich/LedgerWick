@@ -33,12 +33,14 @@ export async function timed<T>(
   stage: string,
   context: Context,
   work: () => Promise<T>,
+  /** What only the result can say, such as how many tokens a model call used. */
+  measured?: (result: T) => Context,
 ): Promise<T> {
   const started = Date.now();
 
   try {
     const result = await work();
-    record(stage, Date.now() - started, { ...context, outcome: "ok" });
+    record(stage, Date.now() - started, { ...context, ...measured?.(result), outcome: "ok" });
     return result;
   } catch (error) {
     record(stage, Date.now() - started, {

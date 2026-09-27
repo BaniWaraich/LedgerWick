@@ -10,12 +10,15 @@
  *
  * ## What makes re-running harmless
  *
- * §5 Step 1: "Transactions already carrying an Invoice Requirement from a previous run are
- * skipped; the run analyzes what is new." That sentence, and not a date window, is what
- * makes a second run cheap and a third run silent. A date window would re-judge everything
- * inside it and re-create what the user had already resolved; the absence of a requirement
- * is the only honest definition of "new", because it survives the user deleting statements,
- * uploading overlapping ones, and resolving requirements in between.
+ * §5 Step 1: transactions a previous run has already judged are skipped; the run analyzes
+ * what is new. `canonical_transactions.judged_at` records a judgment of any kind -- a
+ * document is needed, none is, or a question was raised -- and that, not a date window, is
+ * what makes a second run cheap and a third run silent.
+ *
+ * It used to be the absence of a requirement. Most payments need no document, so most of a
+ * statement went back to the model on every retry and every later run, and every open
+ * question was raised again. The user answering a question is the one thing that reopens a
+ * transaction (`answer.ts`), because that run has something new to judge it with.
  *
  * `invoice_requirements_transaction_idx` is the backstop underneath it. Two runs racing on
  * one workspace both see the same transaction as new, and the second insert collides rather
@@ -36,7 +39,8 @@
  * carries on, rather than returning and calling the run finished — which reported a
  * truncated list as though it were the whole answer, and is the one failure mode here that
  * a user cannot see. The skipped transactions keep no requirement, so the next run picks
- * them up under the same definition of "new" as everything else.
+ * them up under the same definition of "new" as everything else. So does a transaction the
+ * model left out of an otherwise good answer: nothing was decided about it.
  *
  * ## What code decides, and what the model decides
  *
@@ -51,7 +55,7 @@
  *   this file does not depend on it having been caught there.
  */
 
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 
 import { mapWithConcurrency } from "../concurrency";
 import type { WorkspaceScope } from "../db/workspace-scope";
@@ -69,29 +73,20 @@ import type { ClassifyTransactions, KnownFact, TransactionBrief } from "./contra
 /**
  * How many transactions go to the model at once.
  *
- * Not a tuned number and deliberately not presented as one -- `docs/architecture.md §21`
- * reserves cost and latency for evaluation against real usage. It is large enough that a
- * month of statements is a handful of calls rather than one per row, and small enough that
- * a single failure does not cost the whole run.
+ * Not a tuned number -- `docs/architecture.md §21` reserves cost and latency for evaluation
+ * against real usage. What bounds it is the time one call takes. At 40, production calls
+ * ran 30 to 186 seconds, and one slow answer spent most of a 300-second invocation. At 20,
+ * each call is its own step with room to spare, and a failure costs half as much.
  */
-const BATCH_SIZE = 40;
+const BATCH_SIZE = 20;
 
 /**
- * How many batches are in front of the model at once.
+ * How many batches are in front of the model at once, at most.
  *
- * Batches share nothing. Each judges its own slice of transactions, and the only rows two
- * of them could both want are barred by `invoice_requirements_transaction_idx` — which
- * `createRequirement` already leans on, because a race there was always possible between
- * two runs.
- *
- * Serial was not a safety property, it was the default, and it cost the run everything: a
- * workspace of 404 transactions is eleven batches, and at the ~50 seconds a call takes that
- * is ~570 seconds against a function that is killed at 300. The run could not finish, and
- * a run that cannot finish reports a truncated list as though it were the answer.
- *
- * Four rather than eleven because the limit that matters is the provider's, not ours. This
- * is deliberately conservative: `docs/architecture.md §21` reserves cost and latency for
- * evaluation, and being rate limited would turn a slow run into a failed one.
+ * Batches share nothing: each judges its own transactions, and the only rows two of them
+ * could both want are barred by `invoice_requirements_transaction_idx`. Four because the
+ * limit that matters is the provider's. In the workflow Inngest's per-workspace concurrency
+ * is tighter still, but this bound holds wherever the steps actually run.
  */
 const CLASSIFY_CONCURRENCY = 4;
 
@@ -118,87 +113,118 @@ interface BatchOutcome {
 }
 
 /**
+ * Runs one named piece of the work, and returns what it returned.
+ *
+ * The workflow passes Inngest's `step.run`, so each piece is kept once it has finished: a
+ * retry, or an invocation killed at its time limit, redoes only the piece that did not
+ * finish. Everywhere else the piece is simply called. What comes back must survive JSON,
+ * which is why the pieces pass ids and counts rather than rows.
+ */
+export type RunStep = <T>(id: string, work: () => Promise<T>) => Promise<T>;
+
+const inline: RunStep = (_id, work) => work();
+
+/**
  * Analyse everything this workspace has not judged yet, and record what it owes documents for.
  *
  * One run over the whole workspace rather than one per statement: §8 requires the analysis
  * to operate across every account the business has, because "is this a transfer to my own
  * account" is a question no single statement can answer.
+ *
+ * ## One step per batch
+ *
+ * All of this used to be one step. On the first production run it made about fifteen model
+ * calls, hit Vercel's 300-second limit, and lost every one of them. Inngest then retried the
+ * whole step from the start. Now the run opens in one step, each batch is judged in its own,
+ * and the run closes in a last one. A batch that has been judged stays judged, whatever
+ * happens to the batches after it.
  */
 export async function identifyRequirements(
   scope: WorkspaceScope,
-  deps: { classify: ClassifyTransactions },
+  deps: { classify: ClassifyTransactions; step?: RunStep },
 ): Promise<RunOutcome> {
-  const [run] = await scope.insert(reconciliationRuns, { state: "RUNNING" });
+  const step = deps.step ?? inline;
+
+  const { runId, batches } = await step("start", async () => {
+    const [run] = await scope.insert(reconciliationRuns, { state: "RUNNING" });
+    const pending = await transactionsAwaitingJudgement(scope);
+
+    const ids = pending.map((transaction) => transaction.id);
+    const batches: string[][] = [];
+    for (let start = 0; start < ids.length; start += BATCH_SIZE) {
+      batches.push(ids.slice(start, start + BATCH_SIZE));
+    }
+    return { runId: run.id, batches };
+  });
 
   try {
-    const pending = await transactionsAwaitingJudgement(scope);
-    const known = await knownFacts(scope);
-
-    const batches: { start: number; rows: typeof pending }[] = [];
-    for (let start = 0; start < pending.length; start += BATCH_SIZE) {
-      batches.push({ start, rows: pending.slice(start, start + BATCH_SIZE) });
-    }
-
-    const outcomes = await mapWithConcurrency(batches, CLASSIFY_CONCURRENCY, (batch) =>
-      judgeBatch(scope, deps, run.id, batch, known),
+    const outcomes = await mapWithConcurrency(
+      batches.map((ids, index) => ({ ids, index })),
+      CLASSIFY_CONCURRENCY,
+      ({ ids, index }) => step(`judge-${index}`, () => judgeBatch(scope, deps, runId, ids)),
     );
 
-    const documentsRequired = sum(outcomes, (outcome) => outcome.documentsRequired);
-    const questionsRaised = sum(outcomes, (outcome) => outcome.questionsRaised);
-    const judged = sum(outcomes, (outcome) => outcome.judged);
-    const failures = outcomes.map((outcome) => outcome.failure).filter((r): r is string => !!r);
-
-    /*
-     * A run is failed only when nothing could be judged at all.
-     *
-     * A batch whose answer did not fit the schema costs that batch and no more -- which is
-     * what `BATCH_SIZE` above always claimed, and what the code did not do: it returned on
-     * the first such batch and abandoned the rest. A workspace of 404 transactions reported
-     * five requirements from its earliest days and called itself finished, which is worse
-     * than failing, because a truncated list is indistinguishable from a short one.
-     *
-     * Their transactions simply stay unjudged, which is a state this run already understands
-     * -- §5 Step 1 defines new as the absence of a requirement, so the next run picks them up
-     * with no special handling and no record that they were ever skipped.
-     */
-    const everyBatchFailed = batches.length > 0 && failures.length === batches.length;
-    const coverage = await coverageExamined(scope);
-
-    if (everyBatchFailed) {
-      return { ...(await failRun(scope, run.id, failures[0])), batchesFailed: failures.length };
-    }
-
-    await scope.update(
-      reconciliationRuns,
-      {
-        state: "COMPLETED",
-        finishedAt: new Date(),
-        // What was judged, not what was waiting. Reporting `pending.length` here would
-        // describe a partial run as a complete one, which is the reporting half of the bug
-        // above.
-        transactionsProcessed: judged,
-        documentsRequired,
-        ...coverage,
-      },
-      eq(reconciliationRuns.id, run.id),
-    );
-
-    // §10: nothing to collect is a real answer, not a failure.
-    return {
-      runId: run.id,
-      state: "COMPLETED",
-      transactionsProcessed: judged,
-      documentsRequired,
-      questionsRaised,
-      batchesFailed: failures.length,
-      failure: failures[0] ?? null,
-    };
+    return await step("finish", () => finishRun(scope, runId, outcomes));
   } catch (error) {
     // A run left in RUNNING is a spinner that never stops. Whatever went wrong, the row
     // says so before the error travels on to Inngest, which decides about retrying.
-    await markFailed(scope, run.id);
+    await markFailed(scope, runId);
     throw error;
   }
+}
+
+/**
+ * Close the run with what its batches settled.
+ *
+ * A run is failed only when nothing could be judged at all.
+ *
+ * A batch whose answer did not fit the schema costs that batch and no more. The code once
+ * returned on the first such batch and abandoned the rest: a workspace of 404 transactions
+ * reported five requirements from its earliest days and called itself finished, which is
+ * worse than failing, because a truncated list is indistinguishable from a short one.
+ *
+ * Their transactions simply stay unjudged, which is a state this run already understands --
+ * §5 Step 1 defines new as not yet judged, so the next run picks them up with no special
+ * handling and no record that they were ever skipped.
+ */
+async function finishRun(
+  scope: WorkspaceScope,
+  runId: string,
+  outcomes: BatchOutcome[],
+): Promise<RunOutcome> {
+  const documentsRequired = sum(outcomes, (outcome) => outcome.documentsRequired);
+  const questionsRaised = sum(outcomes, (outcome) => outcome.questionsRaised);
+  const judged = sum(outcomes, (outcome) => outcome.judged);
+  const failures = outcomes.map((outcome) => outcome.failure).filter((r): r is string => !!r);
+
+  if (outcomes.length > 0 && failures.length === outcomes.length) {
+    return { ...(await failRun(scope, runId, failures[0])), batchesFailed: failures.length };
+  }
+
+  await scope.update(
+    reconciliationRuns,
+    {
+      state: "COMPLETED",
+      finishedAt: new Date(),
+      // What was judged, not what was waiting. Reporting the waiting count here would
+      // describe a partial run as a complete one.
+      transactionsProcessed: judged,
+      documentsRequired,
+      ...(await coverageExamined(scope)),
+    },
+    eq(reconciliationRuns.id, runId),
+  );
+
+  // §10: nothing to collect is a real answer, not a failure.
+  return {
+    runId,
+    state: "COMPLETED",
+    transactionsProcessed: judged,
+    documentsRequired,
+    questionsRaised,
+    batchesFailed: failures.length,
+    failure: failures[0] ?? null,
+  };
 }
 
 /**
@@ -216,14 +242,19 @@ async function judgeBatch(
   scope: WorkspaceScope,
   deps: { classify: ClassifyTransactions },
   runId: string,
-  batch: { start: number; rows: Awaited<ReturnType<typeof transactionsAwaitingJudgement>> },
-  known: KnownFact[],
+  ids: string[],
 ): Promise<BatchOutcome> {
-  const { start, rows } = batch;
+  // Read again rather than carried over from `start`. Only ids survive a step boundary,
+  // and a row judged since -- by an earlier attempt of this step -- drops out here instead
+  // of being paid for twice.
+  const rows = await transactionsAwaitingJudgement(scope, ids);
+  if (rows.length === 0) {
+    return { judged: 0, documentsRequired: 0, questionsRaised: 0, failure: null };
+  }
 
   const judgements = await deps.classify({
-    transactions: rows.map((transaction, offset) => brief(transaction, start + offset)),
-    known,
+    transactions: rows.map((transaction, index) => brief(transaction, index)),
+    known: await knownFacts(scope),
   });
 
   if (!judgements.ok) {
@@ -234,13 +265,17 @@ async function judgeBatch(
 
   let documentsRequired = 0;
   let questionsRaised = 0;
+  const answered = new Set<string>();
 
   for (const judgement of judgements.value.judgements) {
-    const subject = rows[judgement.index - start];
+    const subject = rows[judgement.index];
     // A judgment about a transaction that was not in the batch is not a transaction we are
     // entitled to write against. Dropping it is right: the model answering about row 500 of
-    // a 40-row list has told us nothing about row 500.
+    // a 20-row list has told us nothing about row 500.
     if (!subject) continue;
+    // The model answering twice about one row settles it once.
+    if (answered.has(subject.id)) continue;
+    answered.add(subject.id);
 
     if (!judgement.confident && judgement.clarification) {
       await scope.insert(clarificationQuestions, {
@@ -269,7 +304,15 @@ async function judgeBatch(
     if (created) documentsRequired += 1;
   }
 
-  return { judged: rows.length, documentsRequired, questionsRaised, failure: null };
+  if (answered.size > 0) {
+    await scope.update(
+      canonicalTransactions,
+      { judgedAt: new Date() },
+      inArray(canonicalTransactions.id, [...answered]),
+    );
+  }
+
+  return { judged: answered.size, documentsRequired, questionsRaised, failure: null };
 }
 
 function sum<T>(items: readonly T[], of: (item: T) => number): number {
@@ -279,14 +322,22 @@ function sum<T>(items: readonly T[], of: (item: T) => number): number {
 /**
  * The transactions no run has judged yet.
  *
+ * A requirement is still checked as well as `judged_at`. It costs one read, and a
+ * transaction that already has a requirement must never go back to the model, whatever
+ * the timestamp says.
+ *
  * Two reads and a filter rather than a join, because `WorkspaceScope` deliberately exposes
  * no join: every query it issues carries the workspace filter, and that guarantee is worth
  * more than the query being one round trip. Both reads are scoped, so a transaction from
  * another workspace cannot appear here however the data is shaped.
  */
-async function transactionsAwaitingJudgement(scope: WorkspaceScope) {
+async function transactionsAwaitingJudgement(scope: WorkspaceScope, ids?: string[]) {
+  const unjudged = isNull(canonicalTransactions.judgedAt);
   const [transactions, existing] = await Promise.all([
-    scope.select(canonicalTransactions),
+    scope.select(
+      canonicalTransactions,
+      ids ? and(unjudged, inArray(canonicalTransactions.id, ids)) : unjudged,
+    ),
     scope.select(invoiceRequirements),
   ]);
 

@@ -44,6 +44,7 @@ function transaction(over: Partial<Transaction> = {}): Transaction {
     descriptionNormalized: `payment ${n}`,
     occurrenceIndex: 0,
     externalReference: null,
+    judgedAt: null,
     createdAt: new Date(),
     ...over,
   };

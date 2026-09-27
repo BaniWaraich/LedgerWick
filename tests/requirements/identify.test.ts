@@ -24,7 +24,7 @@ import {
 } from "../../src/db/schema";
 import { openWorkspace, type WorkspaceScope } from "../../src/db/workspace-scope";
 import type { ClassifyTransactions, TransactionBrief } from "../../src/requirements/contracts";
-import { identifyRequirements } from "../../src/requirements/identify";
+import { identifyRequirements, type RunStep } from "../../src/requirements/identify";
 import { createTestDb, seedBankAccount, seedWorkspace, type TestDb } from "../helpers/db";
 
 let harness: TestDb;
@@ -133,6 +133,22 @@ const alwaysAsks: ClassifyTransactions = async ({ transactions }) => ({
   },
 });
 
+/** A classifier that is sure no payment needs a document. */
+const needsNothing: ClassifyTransactions = async ({ transactions }) => ({
+  ok: true,
+  value: {
+    judgements: transactions.map((transaction) => ({
+      index: transaction.index,
+      vendorGuess: null,
+      businessContext: "Internal transfer",
+      needsDocument: false,
+      reason: null,
+      confident: true,
+      clarification: null,
+    })),
+  },
+});
+
 const requirementsOf = (fx: Fixture) => fx.scope.select(invoiceRequirements);
 const questionsOf = (fx: Fixture) => fx.scope.select(clarificationQuestions);
 
@@ -218,6 +234,58 @@ describe("running it again", () => {
 
     expect(second.seen).toHaveLength(0);
     expect(second.calls).toBe(0);
+  });
+
+  it("does not judge again a payment it decided needs no document", async () => {
+    // The production failure: only a requirement marked a transaction as judged, so every
+    // payment that needed nothing -- most of a statement -- went back to the model on every
+    // retry and every later run, and nothing ever got cheaper.
+    const fx = await fixture();
+    await fx.payment({ description: "TRANSFER TO OWN HDFC ACCOUNT" });
+
+    await identifyRequirements(fx.scope, { classify: needsNothing });
+    const second = alwaysRequires();
+    await identifyRequirements(fx.scope, { classify: second });
+
+    expect(second.calls).toBe(0);
+    expect(await requirementsOf(fx)).toHaveLength(0);
+  });
+
+  it("does not ask the same question twice", async () => {
+    // §5 Step 5: "Asking twice is worse than not asking." A question still waiting for the
+    // user is a judgment made; the user answering it is what reopens the transaction.
+    const fx = await fixture();
+    await fx.payment({ description: "XYZ SERVICES" });
+
+    await identifyRequirements(fx.scope, { classify: alwaysAsks });
+    const second = alwaysRequires();
+    await identifyRequirements(fx.scope, { classify: second });
+    await identifyRequirements(fx.scope, { classify: alwaysAsks });
+
+    expect(second.calls).toBe(0);
+    expect(await questionsOf(fx)).toHaveLength(1);
+  });
+
+  it("judges again a transaction the model left out of its answer", async () => {
+    // Nothing was decided about it, so it is still new.
+    const fx = await fixture();
+    await fx.payment({ description: "ANTHROPIC" });
+    await fx.payment({ description: "FORGOTTEN" });
+
+    const answersFirstOnly: ClassifyTransactions = async (request) => {
+      const answered = await needsNothing(request);
+      if (!answered.ok) return answered;
+      return {
+        ok: true,
+        value: { judgements: answered.value.judgements.filter((j) => j.index === 0) },
+      };
+    };
+    await identifyRequirements(fx.scope, { classify: answersFirstOnly });
+
+    const second = alwaysRequires();
+    await identifyRequirements(fx.scope, { classify: second });
+
+    expect(second.seen.map((t) => t.description)).toEqual(["FORGOTTEN"]);
   });
 
   it("judges only what genuinely arrived since", async () => {
@@ -386,22 +454,7 @@ describe("nothing to do", () => {
     const fx = await fixture();
     await fx.payment({ description: "TRANSFER TO OWN HDFC ACCOUNT" });
 
-    const nothingNeeded: ClassifyTransactions = async ({ transactions }) => ({
-      ok: true,
-      value: {
-        judgements: transactions.map((transaction) => ({
-          index: transaction.index,
-          vendorGuess: null,
-          businessContext: "Internal transfer",
-          needsDocument: false,
-          reason: null,
-          confident: true,
-          clarification: null,
-        })),
-      },
-    });
-
-    const outcome = await identifyRequirements(fx.scope, { classify: nothingNeeded });
+    const outcome = await identifyRequirements(fx.scope, { classify: needsNothing });
 
     expect(outcome.state).toBe("COMPLETED");
     expect(outcome.documentsRequired).toBe(0);
@@ -611,9 +664,9 @@ describe("one batch the model cannot answer", () => {
 
     const outcome = await identifyRequirements(fx.scope, { classify: failsBatch(1) });
 
-    // 90 payments over batches of 40: the first 40 are lost, the other 50 are judged.
-    expect(outcome.transactionsProcessed).toBe(50);
-    expect(await requirementsOf(fx)).toHaveLength(50);
+    // 90 payments over batches of 20: the first 20 are lost, the other 70 are judged.
+    expect(outcome.transactionsProcessed).toBe(70);
+    expect(await requirementsOf(fx)).toHaveLength(70);
   });
 
   it("completes the run rather than reporting a truncated list as finished", async () => {
@@ -633,8 +686,8 @@ describe("one batch the model cannot answer", () => {
     await identifyRequirements(fx.scope, { classify: failsBatch(3) });
 
     const [run] = await fx.scope.select(reconciliationRuns);
-    // The 10 in the third batch went unjudged, and the row says 80 rather than 90.
-    expect(run.transactionsProcessed).toBe(80);
+    // The 20 in the third batch went unjudged, and the row says 70 rather than 90.
+    expect(run.transactionsProcessed).toBe(70);
     expect(run.state).toBe("COMPLETED");
   });
 
@@ -643,11 +696,11 @@ describe("one batch the model cannot answer", () => {
     await ninetyPayments(fx);
 
     await identifyRequirements(fx.scope, { classify: failsBatch(1) });
-    expect(await requirementsOf(fx)).toHaveLength(50);
+    expect(await requirementsOf(fx)).toHaveLength(70);
 
     // Nothing records that they were skipped; they are simply still unjudged.
     const second = await identifyRequirements(fx.scope, { classify: alwaysRequires() });
-    expect(second.transactionsProcessed).toBe(40);
+    expect(second.transactionsProcessed).toBe(20);
     expect(await requirementsOf(fx)).toHaveLength(90);
   });
 
@@ -665,5 +718,77 @@ describe("one batch the model cannot answer", () => {
     expect(outcome.state).toBe("FAILED");
     const [run] = await fx.scope.select(reconciliationRuns);
     expect(run.state).toBe("FAILED");
+  });
+});
+
+/*
+ * The production failure this covers: every batch ran inside one Inngest step, the step was
+ * killed at Vercel's 300 seconds, and each retry paid for every batch again.
+ */
+describe("a run that is retried partway through", () => {
+  /** Inngest's step store in miniature: a step that has finished returns what it returned. */
+  function memoized(): RunStep & { ran: string[]; settled: () => Promise<unknown> } {
+    const kept = new Map<string, unknown>();
+    const inFlight: Promise<unknown>[] = [];
+    const runner = Object.assign(
+      async <T>(id: string, work: () => Promise<T>): Promise<T> => {
+        if (kept.has(id)) return kept.get(id) as T;
+        runner.ran.push(id);
+        const running = work().then((result) => {
+          kept.set(id, JSON.parse(JSON.stringify(result)));
+          return result;
+        });
+        inFlight.push(running);
+        return running;
+      },
+      {
+        ran: [] as string[],
+        // Inngest keeps a step that finished even when a sibling failed first. Waiting for
+        // the siblings here is what makes this fake behave the same way.
+        settled: () => Promise.allSettled(inFlight),
+      },
+    );
+    return runner;
+  }
+
+  it("gives each batch its own step", async () => {
+    const fx = await fixture();
+    for (let index = 0; index < 45; index += 1) {
+      await fx.payment({ description: `VENDOR ${index}`, amount: BigInt(100000 + index) });
+    }
+
+    const step = memoized();
+    await identifyRequirements(fx.scope, { classify: alwaysRequires(), step });
+
+    expect(step.ran).toEqual(["start", "judge-0", "judge-1", "judge-2", "finish"]);
+  });
+
+  it("does not pay again for the batches that had already finished", async () => {
+    const fx = await fixture();
+    for (let index = 0; index < 60; index += 1) {
+      await fx.payment({ description: `VENDOR ${index}`, amount: BigInt(100000 + index) });
+    }
+
+    const step = memoized();
+    let calls = 0;
+    const breaksOnSecond: ClassifyTransactions = async (request) => {
+      calls += 1;
+      if (calls === 2) throw new Error("Task timed out after 300 seconds");
+      return alwaysRequires()(request);
+    };
+    await expect(
+      identifyRequirements(fx.scope, { classify: breaksOnSecond, step }),
+    ).rejects.toThrow();
+    await step.settled();
+
+    const retry = alwaysRequires();
+    const outcome = await identifyRequirements(fx.scope, { classify: retry, step });
+
+    // Only the batch that broke is judged again. The two that finished are not re-sent.
+    expect(retry.calls).toBe(1);
+    expect(outcome.state).toBe("COMPLETED");
+    expect(await requirementsOf(fx)).toHaveLength(60);
+    // And the run the retry closes is the one the first attempt opened.
+    expect(await fx.scope.select(reconciliationRuns)).toHaveLength(1);
   });
 });
