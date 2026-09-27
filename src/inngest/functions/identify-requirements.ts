@@ -22,18 +22,23 @@ export const identifyRequirementsFunction = inngest.createFunction(
   {
     id: "identify-requirements",
     /*
-     * Identification is idempotent by what it finds: a retry re-reads the workspace and
-     * judges only transactions that still carry no requirement, so the second attempt of a
-     * run that died halfway finishes it rather than repeating it.
+     * Retries are per step. `identify.ts` gives each batch its own step, so a retry redoes
+     * one batch, never the batches already judged -- and a batch step re-reads what is still
+     * unjudged, so even a retry of the same batch pays only for what it did not finish.
      *
      * Retries exist for the transient half of `§11` -- a provider timeout, a cold database.
      * A model that answered unusably is not retried at all; `identify.ts` records that as a
-     * failed run, because `inferStructure` already told us the answer will not improve.
+     * failed batch, because `inferStructure` already told us the answer will not improve.
      */
     retries: 3,
     triggers: [reconciliationRequested],
     /*
      * Only one run at a time per workspace.
+     *
+     * Inngest applies this limit to steps, not only to runs, so a run's batch steps are
+     * judged one after another. That is slower than judging them side by side, and it is
+     * what keeps each step inside its own 300 seconds and keeps a second run from judging
+     * the same batch while the first is still on it.
      *
      * Two concurrent runs would both see the same transactions as unjudged and race on
      * `invoice_requirements_transaction_idx`. The loser's insert collides harmlessly -- that
@@ -61,10 +66,14 @@ export const identifyRequirementsFunction = inngest.createFunction(
     },
   },
   async ({ event, step }) => {
-    await step.run("identify", async () => {
-      const scope = await openWorkspaceForJob(event.data.userId, event.data.workspaceId);
+    const scope = await openWorkspaceForJob(event.data.userId, event.data.workspaceId);
 
-      return identifyRequirements(scope, { classify: classifyTransactions });
+    await identifyRequirements(scope, {
+      classify: classifyTransactions,
+      // Each piece becomes a step whose result Inngest keeps. The pieces return plain
+      // ids, strings and counts, so what comes back through JSON is exactly what went in,
+      // and the cast only tells the compiler what `RunStep` already requires.
+      step: <T>(id: string, work: () => Promise<T>) => step.run(id, work) as Promise<T>,
     });
 
     /*
