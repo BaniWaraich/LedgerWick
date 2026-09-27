@@ -18,25 +18,12 @@ import { requireScope } from "../../../../auth/workspace";
 import { bankAccounts, bankStatements } from "../../../../db/schema";
 import { currencyFor } from "../../../../money/currencies";
 import { formatAmount } from "../../../../money/format";
+import { STATEMENT_IN_FLIGHT, STATEMENT_MESSAGES } from "../../../../statements/messages";
 import { difference } from "../../../../statements/validate";
 import { accountsForBinding } from "../../../../statements/bind";
 import { AccountPicker } from "./account-picker";
 import { PollWhileProcessing } from "./poll";
 import styles from "./page.module.css";
-
-/** `docs/state-machines.md §1`, verbatim. The UI does not invent its own wording. */
-const MESSAGES: Record<string, string> = {
-  UPLOADING: "Uploading your statement…",
-  IDENTIFYING: "Identifying your bank…",
-  NEEDS_ACCOUNT: "Tell us which account this statement covers.",
-  PARSING: "Extracting transactions…",
-  VALIDATING: "Checking your transactions…",
-  COMPLETED: "Statement processed.",
-  FAILED: "We couldn't process this statement.",
-};
-
-/** States where a workflow is still running, and the page should keep looking. */
-const IN_FLIGHT = new Set(["UPLOADING", "IDENTIFYING", "PARSING", "VALIDATING"]);
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -88,7 +75,7 @@ export default async function StatementBatchPage({
             </div>
 
             <p className={styles.message}>
-              {statement.failureReason ?? MESSAGES[statement.state] ?? statement.state}
+              {statement.failureReason ?? STATEMENT_MESSAGES[statement.state] ?? statement.state}
             </p>
 
             {statement.periodStart && statement.periodEnd ? (
@@ -122,7 +109,7 @@ export default async function StatementBatchPage({
       </ul>
 
       {/* Only while something is actually moving; a finished batch stops asking. */}
-      {statements.some((statement) => IN_FLIGHT.has(statement.state)) ? (
+      {statements.some((statement) => STATEMENT_IN_FLIGHT.has(statement.state)) ? (
         <PollWhileProcessing />
       ) : null}
     </div>

@@ -49,7 +49,7 @@ export default async function WorkspaceLayout({ children }: { children: React.Re
             </span>
             Home
           </Link>
-          <Link className={styles.navLink} href="/statements/upload">
+          <Link className={styles.navLink} href="/statements">
             <span className="material-symbols-outlined" aria-hidden="true">
               upload_file
             </span>
