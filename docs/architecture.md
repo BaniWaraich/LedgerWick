@@ -1117,6 +1117,9 @@ Measure extraction quality and reliability.
 
 ## 21.2 LLM/provider
 
+Evaluated so far: transaction classification, in `docs/decisions/0018` (stays on Sonnet 5;
+the cost is its thinking). The bench is `bench/classify.bench.ts`.
+
 Evaluate:
 
 - invoice field extraction accuracy
