@@ -115,6 +115,8 @@ export const fetchOutcomeEnum = pgEnum("fetch_outcome", [
   "MESSAGE_GONE",
 ]);
 
+export const exportStateEnum = pgEnum("export_state", ["GENERATING", "READY", "FAILED"]);
+
 /* ------------------------------------------------------------------ identity */
 
 /**
@@ -1044,5 +1046,52 @@ export const candidateEmailDocuments = pgTable(
   (t) => [
     uniqueIndex("candidate_email_documents_pk").on(t.candidateEmailId, t.documentId),
     index("candidate_email_documents_document_idx").on(t.workspaceId, t.documentId),
+  ],
+);
+
+/* ------------------------------------------------------------------ exports */
+
+/**
+ * One Excel snapshot of the reconciliation, and the record of making it.
+ *
+ * spec: docs/workflows/missing-invoice-report.md §9 · docs/architecture.md §12B ·
+ * docs/state-machines.md §7
+ * decision: docs/decisions/0017-reconciliation-export.md
+ *
+ * A row per request, never updated to reflect later state: regenerating is a new row and a
+ * new object, which is what keeps an earlier file a snapshot.
+ */
+export const reconciliationExports = pgTable(
+  "reconciliation_exports",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    /** The user who asked. Text for the reason `users.id` is. */
+    requestedBy: text("requested_by").notNull(),
+    state: exportStateEnum("state").notNull().default("GENERATING"),
+    /** A key, never a URL (ADR 0007). Present exactly when `READY`; see the check below. */
+    storageRef: text("storage_ref"),
+    /** What the user's browser saves the file as. */
+    filename: text("filename").notNull(),
+    /** How many transactions the file holds. Set with the file. */
+    transactionCount: integer("transaction_count"),
+    requestedAt: timestamp("requested_at", { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("reconciliation_exports_workspace_idx").on(t.workspaceId, t.requestedAt),
+    /*
+     * A file exists exactly when the export is READY.
+     *
+     * "A failed generation never looks like a download" is then a property of the table
+     * rather than of the code that writes it: no write can leave a GENERATING or FAILED
+     * export holding a file to serve, or a READY one without.
+     */
+    check(
+      "reconciliation_exports_file_check",
+      sql`(${t.state} = 'READY') = (${t.storageRef} IS NOT NULL)`,
+    ),
   ],
 );

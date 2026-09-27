@@ -39,6 +39,7 @@ import {
   invoiceRequirements,
   invoices,
   mailboxSearches,
+  reconciliationExports,
   reconciliationRuns,
   statementLines,
   supportingDocuments,
@@ -77,6 +78,7 @@ export const workspaceScopedTables = [
   mailboxSearches,
   candidateEmails,
   candidateEmailDocuments,
+  reconciliationExports,
 ] as const;
 
 export type WorkspaceScopedTable = (typeof workspaceScopedTables)[number];

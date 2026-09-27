@@ -7,6 +7,7 @@
  */
 
 import { assessRetrievalFunction } from "./assess-retrieval";
+import { generateExportFunction } from "./generate-export";
 import { identifyRequirementsFunction } from "./identify-requirements";
 import { identifyStatementFunction } from "./identify-statement";
 import { matchInvoiceFunction } from "./match-invoice";
@@ -17,6 +18,7 @@ import { understandDocumentFunction } from "./understand-document";
 
 export const functions = [
   assessRetrievalFunction,
+  generateExportFunction,
   identifyRequirementsFunction,
   identifyStatementFunction,
   matchInvoiceFunction,

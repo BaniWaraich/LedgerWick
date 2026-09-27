@@ -20,6 +20,12 @@ describe("document keys", () => {
     expect(statement).not.toBe(document);
   });
 
+  it("keeps generated exports under their workspace, apart from what the user uploaded", () => {
+    const exported = documentKey(WORKSPACE, "exports", "abc", "reconciliation.xlsx");
+
+    expect(exported).toBe(`workspaces/${WORKSPACE}/exports/abc/reconciliation.xlsx`);
+  });
+
   // spec: ADR 0007 — a key is workspace-prefixed, so a filename must not be able to leave it
   it("cannot be walked out of its workspace with a traversal filename", () => {
     const key = documentKey(WORKSPACE, "documents", "abc", `../../${OTHER}/documents/x.pdf`);

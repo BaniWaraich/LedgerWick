@@ -763,6 +763,13 @@ URLs — see section 19 and the workflow document for why.
 Generated exports are stored with the same privacy rules as source documents and are
 subject to expiry, since they are derived data and can always be regenerated.
 
+**OPEN DECISION — expiry policy.** No retention period has been chosen, and the storage
+module deliberately has no delete (§6.1). Until this is settled, exports are kept. Settling
+it needs three things: a period, a delete that reaches exports only and never source
+documents, and a scheduled cleanup. The same cleanup would reclaim an export file orphaned by
+a crash between storing it and marking it `READY` (`docs/decisions/0017`). Revisit before
+exports accumulate in quantity, or when a user asks for their data to be removed.
+
 ---
 
 # 12C. Human-in-the-Loop Workflows

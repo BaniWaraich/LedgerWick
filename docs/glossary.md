@@ -184,6 +184,14 @@ A Run has an identity, a start and end time, the Statement Coverage it examined,
 counts it produced. The Missing Invoice Report displays the latest Run. Runs are retained
 so that a later Run can process only what is genuinely new.
 
+### Reconciliation Export
+
+A stored Excel snapshot of the whole reconciliation: every Canonical Transaction, what it
+needed, and the document that satisfied it. It is generated in the background at the
+user's request, and it is never changed after it is made. Asking again produces a new one.
+It links back into the application and never to storage
+(`docs/workflows/missing-invoice-report.md §9`, `docs/decisions/0017`).
+
 ### Match
 
 The link between an Invoice Requirement and the Supporting Document that satisfies it,
